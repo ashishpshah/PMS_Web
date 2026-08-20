@@ -34,6 +34,21 @@ export const STATUS_BADGE_VARIANT: Record<Status, 'default' | 'success' | 'warni
 };
 export type ProjectStatus = 'active' | 'on-hold' | 'completed';
 
+export const PROJECT_STATUSES: ProjectStatus[] = ['active', 'on-hold', 'completed'];
+
+export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  'active':    'Active',
+  'on-hold':   'On Hold',
+  'completed': 'Completed',
+};
+
+// Badge variant per project status (matches Badge.tsx variants)
+export const PROJECT_STATUS_BADGE_VARIANT: Record<ProjectStatus, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
+  'active':    'success',
+  'on-hold':   'warning',
+  'completed': 'info',
+};
+
 export type ReasonTag =
   | 'Resignation'
   | 'Workload Balancing'
@@ -350,7 +365,47 @@ export interface TopUserEffort {
   pausedSeconds: number;
 }
 
+export interface MatrixRow {
+  id: number;
+  name: string;
+  countsByStatus: Record<string, number>;
+  total: number;
+}
+
+export interface ProjectStatusMatrix {
+  axis: 'project' | 'assignee';
+  rows: MatrixRow[];
+}
+
+export interface OverdueTaskRow {
+  id: number;
+  code?: string;
+  title: string;
+  status: string;
+  dueDate: string;
+  daysOverdue: number;
+  assignedToId?: number;
+  assignedToName?: string;
+}
+
+export interface StalledProjectRow {
+  id: number;
+  code?: string;
+  name: string;
+  daysSinceActivity: number;
+  ownerId: number;
+  ownerName?: string;
+}
+
+export interface AtRiskData {
+  overdueTasks: OverdueTaskRow[];
+  stalledProjects: StalledProjectRow[];
+}
+
 export interface DashboardStats {
+  filterUserId?: number;
+  fromUtc?: string;
+  toUtc?: string;
   totalProjects: number;
   totalTasks: number;
   activeUsers: number;
