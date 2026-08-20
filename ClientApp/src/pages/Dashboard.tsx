@@ -22,7 +22,7 @@ import { DashboardFilterBar } from '../components/dashboard/DashboardFilterBar';
 import { BreakdownMatrix } from '../components/dashboard/BreakdownMatrix';
 import { AtRiskWidget } from '../components/dashboard/AtRiskWidget';
 import { ProjectTimelineBars } from '../components/dashboard/ProjectTimelineBars';
-import { StatusDonutChart } from '../components/dashboard/StatusDonutChart';
+import { UserStatusList } from '../components/dashboard/UserStatusList';
 import { STATUS_CFG } from '../components/dashboard/statusConfig';
 
 // Local (not UTC) yyyy-mm-dd so "today"/"yesterday" match the user's calendar day.
@@ -282,9 +282,7 @@ export default function Dashboard() {
 
         {/* ── Task Status Distribution ──────────────────────────────────────── */}
         {dashboardStats && (() => {
-          const total = dashboardStats.tasksByStatus.reduce((s, x) => s + x.count, 0) || 1;
           const getCount = (key: string) => dashboardStats.tasksByStatus.find(x => x.status === key)?.count ?? 0;
-          const countsMap = Object.fromEntries(STATUS_CFG.map(s => [s.key, getCount(s.key)]));
 
           return (
             <div className="space-y-3">
@@ -293,23 +291,23 @@ export default function Dashboard() {
               </h2>
               <Card>
                 <CardContent className="p-5 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                    {/* Status pills row */}
-                    <div className="flex flex-wrap gap-2 content-start">
-                      {STATUS_CFG.map(s => {
-                        const count = getCount(s.key);
-                        return (
-                          <Link key={s.key} to={`/tasks?status=${s.key}`}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30 hover:shadow-sm transition-shadow group">
-                            <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200">{s.label}</span>
-                            <span className={`text-[13px] font-black font-mono ${s.text}`}>{count}</span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                    {/* Donut chart */}
-                    <StatusDonutChart counts={countsMap} />
+                  {/* Status pills row */}
+                  <div className="flex flex-wrap gap-2">
+                    {STATUS_CFG.map(s => {
+                      const count = getCount(s.key);
+                      return (
+                        <Link key={s.key} to={`/tasks?status=${s.key}`}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30 hover:shadow-sm transition-shadow group">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200">{s.label}</span>
+                          <span className={`text-[13px] font-black font-mono ${s.text}`}>{count}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  {/* Per-user table: always shows every teammate. */}
+                  <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+                    <UserStatusList from={range.from} to={range.to} />
                   </div>
                 </CardContent>
               </Card>
@@ -482,7 +480,7 @@ export default function Dashboard() {
         <AtRiskWidget data={atRisk} loading={atRiskLoading} />
 
         {/* ── Breakdown Matrix (admin only) ───────────────────────────────────── */}
-        {isAdmin && <BreakdownMatrix from={range.from} to={range.to} />}
+        {isAdmin && <BreakdownMatrix from={range.from} to={range.to} userId={scopedUserId ?? undefined} />}
 
         {/* ── Work Diary ─────────────────────────────────────────────────────── */}
         {(() => {

@@ -8,12 +8,13 @@ import { STATUS_CFG } from './statusConfig';
 interface Props {
   from?: string;
   to?: string;
+  userId?: number;
 }
 
 // Admin-only project x status / teammate x status breakdown table. The
 // teammate-axis view doubles as the "All Users combined" per-person
 // breakdown the user asked for — no separate endpoint needed for that.
-export function BreakdownMatrix({ from, to }: Props) {
+export function BreakdownMatrix({ from, to, userId }: Props) {
   const [axis, setAxis] = useState<'project' | 'assignee'>('project');
   const [matrix, setMatrix] = useState<ProjectStatusMatrix | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,12 +22,12 @@ export function BreakdownMatrix({ from, to }: Props) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    dashboardService.getStatusMatrix(axis, from, to)
+    dashboardService.getStatusMatrix(axis, from, to, userId)
       .then(data => { if (!cancelled) setMatrix(data); })
       .catch(() => { if (!cancelled) setMatrix(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [axis, from, to]);
+  }, [axis, from, to, userId]);
 
   const rows = matrix?.rows ?? [];
 
@@ -71,6 +72,12 @@ export function BreakdownMatrix({ from, to }: Props) {
                     </th>
                   ))}
                   <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Total</th>
+                  {axis === 'assignee' && (
+                    <>
+                      <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Est Hours</th>
+                      <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Working Hours</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -83,6 +90,12 @@ export function BreakdownMatrix({ from, to }: Props) {
                       </td>
                     ))}
                     <td className="px-4 py-2.5 text-[12px] font-mono font-black text-right text-gray-800 dark:text-gray-200">{row.total}</td>
+                    {axis === 'assignee' && (
+                      <>
+                        <td className="px-4 py-2.5 text-[12px] font-mono text-right text-gray-500 dark:text-gray-400">{row.assignedHours}h</td>
+                        <td className="px-4 py-2.5 text-[12px] font-mono text-right text-indigo-600">{row.workingHours}h</td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>

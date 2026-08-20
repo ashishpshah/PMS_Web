@@ -21,7 +21,7 @@ namespace TaskManagement.Services
         Task<ApiResponse<TaskDto>> UpdateTaskAsync(int id, CreateTaskDto updateTaskDto, int userId);
         Task<ApiResponse<bool>> DeleteTaskAsync(int id);
         Task<ApiResponse<DashboardStatsDto>> GetDashboardStatsAsync(int? filterUserId, DateTime? fromUtc, DateTime? toUtc, int requestingUserId, bool isAdmin, CancellationToken ct = default);
-        Task<ApiResponse<ProjectStatusMatrixDto>> GetProjectStatusMatrixAsync(DateTime? fromUtc, DateTime? toUtc, string axis, CancellationToken ct = default);
+        Task<ApiResponse<ProjectStatusMatrixDto>> GetProjectStatusMatrixAsync(DateTime? fromUtc, DateTime? toUtc, string axis, int? filterUserId = null, CancellationToken ct = default);
         Task<ApiResponse<AtRiskDto>> GetAtRiskAsync(int? filterUserId, int requestingUserId, bool isAdmin, CancellationToken ct = default);
         Task<ApiResponse<TaskDto>> AssignTaskAsync(int taskId, int? assigneeId);
         Task<ApiResponse<TaskCommentDto>> AddCommentAsync(int taskId, CreateTaskCommentDto dto, int userId);
@@ -671,7 +671,7 @@ namespace TaskManagement.Services
             };
         }
 
-        public async Task<ApiResponse<ProjectStatusMatrixDto>> GetProjectStatusMatrixAsync(DateTime? fromUtc, DateTime? toUtc, string axis, CancellationToken ct = default)
+        public async Task<ApiResponse<ProjectStatusMatrixDto>> GetProjectStatusMatrixAsync(DateTime? fromUtc, DateTime? toUtc, string axis, int? filterUserId = null, CancellationToken ct = default)
         {
             var validStatuses = new[] { "new", "in-progress", "paused", "blocked", "under-review", "issues", "completed" };
             var byAssignee = string.Equals(axis, "assignee", StringComparison.OrdinalIgnoreCase);
@@ -681,26 +681,84 @@ namespace TaskManagement.Services
                 taskQuery = taskQuery.Where(t => t.CreatedAt >= fromUtc.Value);
             if (toUtc.HasValue)
                 taskQuery = taskQuery.Where(t => t.CreatedAt < toUtc.Value);
+            if (filterUserId.HasValue)
+                taskQuery = taskQuery.Where(t => t.AssignedToId == filterUserId.Value);
 
             var rows = await taskQuery
-                .Select(t => new { t.ProjectId, t.AssignedToId, t.Status })
+                .Select(t => new { t.ProjectId, t.AssignedToId, t.Status, t.EstimatedHours })
                 .ToListAsync(ct);
 
             List<MatrixRowDto> matrixRows;
             if (byAssignee)
             {
-                var grouped = rows.Where(r => r.AssignedToId.HasValue)
-                    .GroupBy(r => r.AssignedToId!.Value)
-                    .ToList();
-                var userIds = grouped.Select(g => g.Key).ToList();
-                var userNames = await _context.Users.Where(u => userIds.Contains(u.Id))
-                    .Select(u => new { u.Id, u.FullName }).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
-                matrixRows = grouped.Select(g => new MatrixRowDto
+                // Always list every active user (zero-filled if they have no tasks
+                // matching the current filter), not just users who happen to have a
+                // task in range — matches the rest of the app's "show the whole team"
+                // convention (e.g. the Work Diary admin view).
+                var userQuery = _context.Users.Where(u => u.IsActive);
+                if (filterUserId.HasValue)
+                    userQuery = userQuery.Where(u => u.Id == filterUserId.Value);
+                var allUsers = await userQuery.Select(u => new { u.Id, u.FullName }).ToListAsync(ct);
+                var userIds = allUsers.Select(u => u.Id).ToList();
+
+                // ToLookup (not a Dictionary) so users with zero matching tasks safely
+                // resolve to an empty sequence instead of a missing-key lookup.
+                var taskLookup = rows.Where(r => r.AssignedToId.HasValue).ToLookup(r => r.AssignedToId!.Value);
+                var assignedHoursByUser = userIds.ToDictionary(id => id, id => taskLookup[id].Sum(r => r.EstimatedHours ?? 0));
+
+                // Working hours: computed productive+paused time (same office-hours-clipped
+                // engine as GetEffortStatsAsync/Effort & Productivity), attributed to each
+                // task's CURRENT assignee (not full assignment-window history — kept simple
+                // and consistent with how the count/estimated-hours columns above are already
+                // grouped by current AssignedToId).
+                var now = AppClock.Now;
+                var winStart = fromUtc ?? DateTime.MinValue;
+                var winEnd = toUtc ?? now;
+                var effortTasks = await _context.Tasks
+                    .Where(t => t.AssignedToId.HasValue && userIds.Contains(t.AssignedToId.Value))
+                    .Select(t => new { t.Id, t.CreatedAt, t.Status, t.AssignedToId })
+                    .ToListAsync(ct);
+                var effortTaskIds = effortTasks.Select(t => t.Id).ToHashSet();
+                var statusByTask = (await _context.TaskStatusHistories
+                        .Where(h => effortTaskIds.Contains(h.TaskId))
+                        .OrderBy(h => h.ChangedAt)
+                        .ToListAsync(ct))
+                    .GroupBy(h => h.TaskId)
+                    .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());
+                var emptyStatus = new List<TaskStatusHistory>();
+
+                var workingSecondsByUser = new Dictionary<int, long>();
+                foreach (var t in effortTasks)
                 {
-                    Id = g.Key,
-                    Name = userNames.TryGetValue(g.Key, out var n) ? n : $"User #{g.Key}",
-                    CountsByStatus = validStatuses.ToDictionary(s => s, s => g.Count(r => r.Status == s)),
-                    Total = g.Count()
+                    var statusRows = statusByTask.TryGetValue(t.Id, out var sr) ? sr : emptyStatus;
+                    var segments = BuildStatusSegments(t.CreatedAt, t.Status, statusRows, now);
+                    var uid = t.AssignedToId!.Value;
+                    foreach (var s in segments)
+                    {
+                        var statusLower = (s.Status ?? string.Empty).ToLowerInvariant();
+                        if (statusLower != "in-progress" && statusLower != "paused") continue;
+                        var segWinStart = s.StartAt > winStart ? s.StartAt : winStart;
+                        var segWinEnd = s.EndAt < winEnd ? s.EndAt : winEnd;
+                        if (segWinEnd <= segWinStart) continue;
+                        var clip = EffortHelpers.WorkingOverlap(segWinStart, segWinEnd);
+                        if (clip <= 0) continue;
+                        workingSecondsByUser.TryGetValue(uid, out var acc);
+                        workingSecondsByUser[uid] = acc + clip;
+                    }
+                }
+
+                matrixRows = allUsers.Select(u =>
+                {
+                    var userTasks = taskLookup[u.Id];
+                    return new MatrixRowDto
+                    {
+                        Id = u.Id,
+                        Name = u.FullName,
+                        CountsByStatus = validStatuses.ToDictionary(s => s, s => userTasks.Count(r => r.Status == s)),
+                        Total = userTasks.Count(),
+                        AssignedHours = assignedHoursByUser.TryGetValue(u.Id, out var ah) ? ah : 0,
+                        WorkingHours = workingSecondsByUser.TryGetValue(u.Id, out var ws) ? Math.Round(ws / 3600m, 1) : 0
+                    };
                 }).OrderByDescending(r => r.Total).ToList();
             }
             else

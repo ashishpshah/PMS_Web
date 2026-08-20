@@ -319,6 +319,12 @@ namespace TaskManagement.DTOs
         public string Name { get; set; } = string.Empty;
         public Dictionary<string, int> CountsByStatus { get; set; } = new();
         public int Total { get; set; }
+        // Assignee-axis only (0 on project-axis rows):
+        // AssignedHours = sum of EstimatedHours across the user's tasks in scope (workload).
+        // WorkingHours = computed productive+paused time (EffortHelpers, office-hours-clipped),
+        // attributed to the task's current assignee, within the requested date window.
+        public decimal AssignedHours { get; set; }
+        public decimal WorkingHours { get; set; }
     }
 
     // ── At-risk snapshot (overdue tasks + stalled projects), current-state only ──

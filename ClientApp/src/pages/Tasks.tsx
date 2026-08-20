@@ -512,21 +512,24 @@ export default function Tasks() {
 
   // ── deep-link filters from Dashboard "View all" links ─────────────────────
   // ?mine=1 (assigned to me) · ?createdByMe=1 · ?due=overdue|upcoming · ?blocked=1
+  // ?userId=123 (a specific user's tasks, e.g. from Task Distribution's list view)
   useEffect(() => {
     const mine = searchParams.get('mine');
     const createdByMe = searchParams.get('createdByMe');
     const due = searchParams.get('due');
     const blocked = searchParams.get('blocked');
-    if (!mine && !createdByMe && !due && !blocked) return;
+    const userId = searchParams.get('userId');
+    if (!mine && !createdByMe && !due && !blocked && !userId) return;
 
     if (mine === '1' && currentUser) setSelectedUserIds([currentUser.id]);
+    if (userId) { const n = Number(userId); if (!Number.isNaN(n)) setSelectedUserIds([n]); }
     if (createdByMe === '1') setShowCreatedByMe(true);
     if (due === 'overdue' || due === 'upcoming') setDueFilter(due);
     if (blocked === '1') setShowBlockedOnly(true);
 
     // Clean the filter params from the URL (state now drives the UI)
     const next = new URLSearchParams(searchParams);
-    ['mine', 'createdByMe', 'due', 'blocked'].forEach(k => next.delete(k));
+    ['mine', 'createdByMe', 'due', 'blocked', 'userId'].forEach(k => next.delete(k));
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);

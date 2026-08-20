@@ -154,14 +154,24 @@ namespace TaskManagement.Controllers
             return Ok(result);
         }
 
-        // Admin-only project/teammate x status breakdown matrix.
+        // Project axis stays admin-only (org-wide breakdown). Teammate axis is open to
+        // every authenticated user and always shows all teammates by default — the
+        // Task Distribution list view intentionally does not scope this to "just me"
+        // for non-admins. `userId` remains an optional display filter (used by the
+        // admin-only Breakdown Matrix section to narrow to one person), not a
+        // per-role restriction.
         [HttpGet("status-matrix")]
         public async Task<ActionResult<ApiResponse<ProjectStatusMatrixDto>>> GetStatusMatrix(
-            [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] string axis = "project")
+            [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] string axis = "project", [FromQuery] int? userId = null)
         {
-            if (!await _authService.IsAdminAsync())
-                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "Only admins can view the status breakdown matrix" });
-            var result = await _taskService.GetProjectStatusMatrixAsync(from, to, axis, HttpContext.RequestAborted);
+            var requestingUserId = _authService.GetCurrentUserId();
+            if (requestingUserId <= 0)
+                return Unauthorized(new ApiResponse<ProjectStatusMatrixDto> { Success = false, Message = "Unauthorized" });
+            var isAdmin = await _authService.IsAdminAsync();
+            var isProjectAxis = string.Equals(axis, "project", StringComparison.OrdinalIgnoreCase);
+            if (isProjectAxis && !isAdmin)
+                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "Only admins can view the project breakdown matrix" });
+            var result = await _taskService.GetProjectStatusMatrixAsync(from, to, axis, userId, HttpContext.RequestAborted);
             return Ok(result);
         }
 

@@ -20,10 +20,11 @@ export const dashboardService = {
     return apiRequest<DashboardEffort>(`/tasks/effort-stats${q ? `?${q}` : ''}`);
   },
 
-  async getStatusMatrix(axis: 'project' | 'assignee', from?: string, to?: string): Promise<ProjectStatusMatrix> {
+  async getStatusMatrix(axis: 'project' | 'assignee', from?: string, to?: string, userId?: number): Promise<ProjectStatusMatrix> {
     const qs = new URLSearchParams({ axis });
     if (from) qs.set('from', from);
     if (to) qs.set('to', to);
+    if (userId != null) qs.set('userId', String(userId));
     return apiRequest<ProjectStatusMatrix>(`/tasks/status-matrix?${qs}`);
   },
 

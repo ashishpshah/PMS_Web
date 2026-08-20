@@ -370,6 +370,8 @@ export interface MatrixRow {
   name: string;
   countsByStatus: Record<string, number>;
   total: number;
+  assignedHours: number;
+  workingHours: number;
 }
 
 export interface ProjectStatusMatrix {
