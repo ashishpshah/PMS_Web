@@ -12,7 +12,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Task, Status, Priority, Attachment, STATUS_LABELS, STATUS_BADGE_VARIANT, TASK_STATUSES, ReasonTag, REASON_TAGS, BLOCK_REASON_TAGS, AddBlockItem, BLOCK_CATEGORIES } from '../types';
-import { cn, formatDateTime, toInputDate, toHHMM, fromHHMM } from '../lib/utils';
+import { cn, formatDateTime, toInputDate, toHHMM, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, HOURS_EXEMPT_EDGES } from '../lib/utils';
 import { TaskAttachmentsPanel } from '../components/ui/TaskAttachmentsPanel';
 import { DateInput } from '../components/ui/DateInput';
 import { TimeInput } from '../components/ui/TimeInput';
@@ -29,6 +29,16 @@ import { showSuccess, showError } from '../lib/toast';
 import { VSelect, SelectOption } from '../components/forms/VSelect';
 import { useDebounce } from '../hooks';
 import { exportTasks } from '../lib/importExport';
+
+const PRIORITY_OPTIONS: SelectOption[] = [
+  { value: 'low',      label: 'Low' },
+  { value: 'medium',   label: 'Medium' },
+  { value: 'high',     label: 'High' },
+  { value: 'critical', label: 'Critical' },
+];
+
+// Hoisted so the per-row status VSelect in the table doesn't reallocate this array on every render.
+const STATUS_OPTIONS: SelectOption[] = TASK_STATUSES.map((s): SelectOption => ({ value: s, label: STATUS_LABELS[s] }));
 
 // ─── highlight helper (from Kanban) ──────────────────────────────────────────
 function highlightText(text: string, query: string): React.ReactNode {
@@ -392,7 +402,7 @@ function TaskCompletionModal({ task, onClose }: TaskCompletionModalProps) {
 }
 
 export default function Tasks() {
-  const { projects, users, addTask, updateTask, deleteTask, addActivity, addChecklistItem, toggleChecklistItem, updateChecklistItem, deleteChecklistItem, markAllChecklistComplete, setTaskBlock, startTask, changeTaskStatus, reassignTask, toggleTaskCondition, addTaskIssueEntry, resolveTaskIssueEntry, addTaskReviewIssue, resolveTaskReviewIssue, completeReview } = useData();
+  const { projects, users, addTask, updateTask, deleteTask, addActivity, addChecklistItem, toggleChecklistItem, updateChecklistItem, deleteChecklistItem, markAllChecklistComplete, startTask, changeTaskStatus, reassignTask, toggleTaskCondition, addTaskIssueEntry, resolveTaskIssueEntry, addTaskReviewIssue, resolveTaskReviewIssue, completeReview } = useData();
   const { user: currentUser, isAdmin } = useAuth();
   const { canCreate: canCreateTask, canUpdate: canUpdateTask, canDelete: canDeleteTask } = usePermissions();
   const { confirmAlert } = useSweetAlert();
@@ -412,6 +422,8 @@ export default function Tasks() {
   const [modalParentTaskId, setModalParentTaskId] = useState<number | ''>('');
   const [modalProjectId, setModalProjectId] = useState<number | ''>('');
   const [modalQaAssigneeId, setModalQaAssigneeId] = useState<number | ''>('');
+  const [modalModule, setModalModule]     = useState('');
+  const [modalPriority, setModalPriority] = useState<Priority>('medium');
   const [editTab, setEditTab] = useState<'details' | 'checklist' | 'status' | 'qa' | 'assignment'>('details');
   const [isModalEditMode, setIsModalEditMode] = useState(true);
   const [assignTabNewAssigneeId, setAssignTabNewAssigneeId] = useState<number | ''>('');
@@ -473,6 +485,9 @@ export default function Tasks() {
 
   // ── pending block modal (drag-drop to blocked column) ─────────────────────
   const [pendingBlockTask, setPendingBlockTask] = useState<Task | null>(null);
+
+  // ── pending hours-spent modal (drag-drop to an hours-required column) ─────
+  const [pendingHoursMove, setPendingHoursMove] = useState<{ task: Task; status: Status } | null>(null);
 
   // ── server-side task fetch (replaces DataContext.tasks pre-load) ──────────
   const [pagedTasks, setPagedTasks]         = useState<Task[]>([]);
@@ -684,6 +699,8 @@ export default function Tasks() {
       setModalEstHours(toHHMM(task.estimatedHours));
       setModalQaAssigneeId(task.qaAssigneeId ?? '');
       setModalProjectId(task.projectId);
+      setModalModule(task.module ?? '');
+      setModalPriority(task.priority || 'medium');
     } else {
       setEditingTask(null);
       setAttachments([]);
@@ -692,6 +709,8 @@ export default function Tasks() {
       setModalDueDate(new Date().toISOString().split('T')[0]);
       setModalEstHours('');
       setModalQaAssigneeId('');
+      setModalModule('');
+      setModalPriority('medium');
     }
     setTagInput('');
     setNewTaskChecklist([]);
@@ -754,7 +773,9 @@ export default function Tasks() {
     const qaAssigneeId = modalQaAssigneeId !== '' ? Number(modalQaAssigneeId) : undefined;
     const requiresQA = qaAssigneeId != null;
 
-    // Estimated hours are compulsory for every task.
+    // Estimated hours are compulsory for every task. This is a total-effort figure for the
+    // whole task (not a single day's work), so unlike hours-spent entries it is NOT capped at
+    // 24h — it mirrors the backend's own bound (DTOs/GeneralDtos.cs: [Range(0.01, 100000)]).
     const estimatedHours = fromHHMM(formData.get('estimatedHours') as string);
     if (estimatedHours == null || estimatedHours <= 0) {
       showError('Estimated hours are required (HH:MM, greater than zero).');
@@ -811,23 +832,12 @@ export default function Tasks() {
 
 
   // ── move task to next stage (from Kanban) ─────────────────────────────────
-  const HOURS_EXEMPT_STATUSES: Status[] = ['new', 'paused', 'blocked', 'issues'];
-  const moveTask = async (task: Task, newStatus: Status) => {
-    // Blocked needs structured block items — open modal instead
-    if (newStatus === 'blocked') {
-      setPendingBlockTask(task);
-      return;
-    }
-    let actualHours: number | undefined;
-    if (!HOURS_EXEMPT_STATUSES.includes(newStatus)) {
-      const entered = window.prompt(`Hours spent — ${STATUS_LABELS[newStatus] ?? newStatus} (HH:MM)`, '');
-      if (entered == null) return;
-      actualHours = fromHHMM(entered.trim());
-      if (actualHours == null || actualHours <= 0) {
-        showError('Enter valid actual hours (HH:MM) to move this task.');
-        return;
-      }
-    }
+  // HOURS_EXEMPT_EDGES (shared with TaskStatusActions.tsx) mirrors backend AllowedEdges' per-edge
+  // ActualHoursExempt (Services/TaskService.cs). 'blocked' is intentionally absent — that
+  // transition is never exempt and is handled via its own modal below, which also collects hours.
+  // Returns whether the move succeeded, so callers (e.g. the pending-hours modal) know
+  // whether it's safe to close/reset their own state, instead of always doing so.
+  const commitMove = async (task: Task, newStatus: Status, actualHours?: number): Promise<boolean> => {
     try {
       await changeTaskStatus(task.id, newStatus, undefined, actualHours);
       await addActivity({ userId: currentUser?.id || 1, userName: currentUser?.name || 'Admin', action: 'moved', targetType: 'task', targetId: task.id, targetName: task.title });
@@ -837,9 +847,25 @@ export default function Tasks() {
         ? users.find(u => u.id === liveTask.qaAssigneeId)
         : null;
       showSuccess(reviewer ? `Submitted for review — assigned to ${reviewer.name}` : 'Task moved');
+      return true;
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to move task');
+      return false;
     }
+  };
+  const moveTask = async (task: Task, newStatus: Status) => {
+    // Blocked needs structured block items — open modal instead
+    if (newStatus === 'blocked') {
+      setPendingBlockTask(task);
+      return;
+    }
+    // Hours-required transitions — open masked hours-spent modal instead of window.prompt
+    const exempt = HOURS_EXEMPT_EDGES[task.status]?.includes(newStatus) ?? false;
+    if (!exempt) {
+      setPendingHoursMove({ task, status: newStatus });
+      return;
+    }
+    await commitMove(task, newStatus);
   };
 
   // ── reassign submit (from Kanban) ─────────────────────────────────────────
@@ -930,10 +956,14 @@ export default function Tasks() {
     <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-50 dark:border-gray-900 bg-gray-50/30 dark:bg-gray-900/30">
       <div className="flex items-center gap-2 text-[11px] text-gray-500">
         <span className="whitespace-nowrap">Rows per page:</span>
-        <select value={localPageSize} onChange={e => { setLocalPageSize(Number(e.target.value)); setLocalPage(1); }}
-          className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer">
-          {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
+        <VSelect
+          options={[10, 25, 50, 100].map((n): SelectOption => ({ value: n, label: String(n) }))}
+          value={{ value: localPageSize, label: String(localPageSize) }}
+          onChange={opt => { if (opt) { setLocalPageSize(Number(opt.value)); setLocalPage(1); } }}
+          isSearchable={false}
+          size="sm"
+          className="w-20"
+        />
         {tasksTotalCount > TASKS_PAGE_SIZE && (
           <span className="text-gray-400 italic whitespace-nowrap">· {tasksTotalCount} total on server</span>
         )}
@@ -1679,28 +1709,15 @@ export default function Tasks() {
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex flex-wrap items-center gap-1">
-                          <div className={cn(
-                            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-tight",
-                            task.status === 'new'          && "bg-gray-100   border-gray-200   text-gray-600    dark:bg-gray-800     dark:border-gray-700   dark:text-gray-300",
-                            task.status === 'in-progress'  && "bg-indigo-50  border-indigo-200 text-indigo-700   dark:bg-indigo-900/20 dark:border-indigo-700  dark:text-indigo-300",
-                            task.status === 'paused'       && "bg-amber-50   border-amber-200  text-amber-700    dark:bg-amber-900/20  dark:border-amber-700   dark:text-amber-300",
-                            task.status === 'blocked'      && "bg-red-50     border-red-200    text-red-700      dark:bg-red-900/20    dark:border-red-700     dark:text-red-300",
-                            task.status === 'under-review' && "bg-purple-50  border-purple-200 text-purple-700   dark:bg-purple-900/20 dark:border-purple-700  dark:text-purple-300",
-                            task.status === 'issues'       && "bg-orange-50  border-orange-200 text-orange-700   dark:bg-orange-900/20 dark:border-orange-700  dark:text-orange-300",
-                            task.status === 'completed'    && "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-300",
-                          )}>
+                          <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                             <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", STATUS_DOT[task.status])} />
-                            <select
-                              value={task.status}
-                              onChange={e => moveTask(task, e.target.value as Status)}
-                              onClick={e => e.stopPropagation()}
-                              className="bg-transparent border-none p-0 focus:ring-0 cursor-pointer appearance-none font-black uppercase tracking-tight text-[10px] leading-none"
-                              title="Change status"
-                            >
-                              {TASK_STATUSES.map(s => (
-                                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                              ))}
-                            </select>
+                            <VSelect
+                              options={STATUS_OPTIONS}
+                              value={{ value: task.status, label: STATUS_LABELS[task.status] }}
+                              onChange={opt => opt && moveTask(task, opt.value as Status)}
+                              isSearchable={false}
+                              size="sm"
+                              className="w-32" />
                           </div>
                           {task.isBlocked && (
                             <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded text-[8px] font-black uppercase tracking-widest">
@@ -1717,20 +1734,19 @@ export default function Tasks() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center space-x-1.5">
                           <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${task.priority === 'critical' ? 'bg-rose-600' : task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                          <select
-                            value={task.priority}
-                            onChange={async e => { try { await updateTask({ ...task, priority: e.target.value as Priority }); refreshTasks(); } catch { showError('Failed to update priority'); } }}
-                            className={cn("text-[10px] font-black uppercase tracking-tight bg-transparent border-none p-0 focus:ring-0 cursor-pointer appearance-none transition-colors",
-                              task.priority === 'critical' ? 'text-rose-700' : task.priority === 'high' ? 'text-red-600' : task.priority === 'medium' ? 'text-amber-600' : 'text-emerald-600')}
-                          >
-                            <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high">High</option>
-                            <option value="critical">Critical</option>
-                          </select>
+                          <VSelect
+                            options={PRIORITY_OPTIONS}
+                            value={PRIORITY_OPTIONS.find(o => o.value === task.priority) ?? null}
+                            onChange={async opt => {
+                              if (!opt) return;
+                              try { await updateTask({ ...task, priority: opt.value as Priority }); refreshTasks(); } catch { showError('Failed to update priority'); }
+                            }}
+                            isSearchable={false}
+                            size="sm"
+                            className="w-28" />
                         </div>
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap">
@@ -2164,11 +2180,11 @@ export default function Tasks() {
                                   onChange={opt => setAssignTabNewAssigneeId(opt ? Number(opt.value) : '')}
                                   isSearchable isClearable placeholder="Select new assignee…" />
                                 {assignTabNewAssigneeId !== '' && assignTabNewAssigneeId !== live.assigneeId && (
-                                  <select value={assignTabReason} onChange={e => setAssignTabReason(e.target.value as ReasonTag)}
-                                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-[12px] font-bold">
-                                    <option value="">— Select reason —</option>
-                                    {(live.isBlocked ? BLOCK_REASON_TAGS : REASON_TAGS).map(r => <option key={r} value={r}>{r}</option>)}
-                                  </select>
+                                  <VSelect
+                                    options={(live.isBlocked ? BLOCK_REASON_TAGS : REASON_TAGS).map((r): SelectOption => ({ value: r, label: r }))}
+                                    value={assignTabReason ? { value: assignTabReason, label: assignTabReason } : null}
+                                    onChange={opt => setAssignTabReason((opt?.value as ReasonTag) ?? '')}
+                                    isSearchable={false} isClearable placeholder="— Select reason —" />
                                 )}
                                 {assignTabNewAssigneeId !== '' && assignTabNewAssigneeId !== live.assigneeId && assignTabReason && (
                                   <button type="button"
@@ -2239,7 +2255,7 @@ export default function Tasks() {
                                     value={projectOptions.find(o => o.value === activeId) ?? null}
                                     onChange={(opt) => {
                                       const v = opt ? Number(opt.value) : '';
-                                      setModalProjectId(v); setSelectedAssignee('');
+                                      setModalProjectId(v); setSelectedAssignee(''); setModalModule('');
                                       if (modalParentTaskId !== '') {
                                         const parent = pagedTasks.find(t => t.id === modalParentTaskId);
                                         if (!parent || parent.projectId !== v) setModalParentTaskId('');
@@ -2256,14 +2272,16 @@ export default function Tasks() {
                             {(() => {
                               const activeProjectId = modalProjectId !== '' ? modalProjectId : (editingTask?.projectId ?? projects[0]?.id);
                               const candidates = pagedTasks.filter(t => t.projectId === activeProjectId && t.id !== editingTask?.id);
+                              const parentOptions: SelectOption[] = candidates.map(t => ({ value: t.id, label: t.title }));
+                              const currentParentId = modalParentTaskId !== '' ? modalParentTaskId : (editingTask?.parentTaskId ?? '');
                               return (
-                                <select name="parentTaskId"
-                                  value={modalParentTaskId !== '' ? modalParentTaskId : (editingTask?.parentTaskId ?? '')}
-                                  onChange={e => setModalParentTaskId(e.target.value === '' ? '' : Number(e.target.value))}
-                                  className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px] font-bold">
-                                  <option value="">None — top-level task</option>
-                                  {candidates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-                                </select>
+                                <>
+                                  <VSelect options={parentOptions}
+                                    value={currentParentId !== '' ? (parentOptions.find(o => o.value === currentParentId) ?? null) : null}
+                                    onChange={opt => setModalParentTaskId(opt ? Number(opt.value) : '')}
+                                    isClearable isSearchable placeholder="None — top-level task" />
+                                  <input type="hidden" name="parentTaskId" value={currentParentId} />
+                                </>
                               );
                             })()}
                           </div>
@@ -2275,11 +2293,15 @@ export default function Tasks() {
                               const activeProjectId = modalProjectId !== '' ? modalProjectId : (editingTask?.projectId ?? projects[0]?.id);
                               const projModules = projects.find(p => p.id === activeProjectId)?.modules ?? [];
                               const options = editingTask?.module && !projModules.includes(editingTask.module) ? [editingTask.module, ...projModules] : projModules;
+                              const moduleOptions: SelectOption[] = options.map(m => ({ value: m, label: m }));
                               return (
-                                <select key={`mod-${activeProjectId}`} name="module" defaultValue={editingTask?.module ?? ''} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px] font-bold">
-                                  <option value="">-- Select --</option>
-                                  {options.map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
+                                <>
+                                  <VSelect options={moduleOptions}
+                                    value={moduleOptions.find(o => o.value === modalModule) ?? null}
+                                    onChange={opt => setModalModule(opt ? String(opt.value) : '')}
+                                    isClearable isSearchable placeholder="-- Select --" />
+                                  <input type="hidden" name="module" value={modalModule} />
+                                </>
                               );
                             })()}
                           </div>
@@ -2345,12 +2367,11 @@ export default function Tasks() {
                         <div className="grid grid-cols-3 gap-4">
                           <div>
                             <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Priority</label>
-                            <select name="priority" defaultValue={editingTask?.priority || 'medium'} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px] font-bold">
-                              <option value="low">Low</option>
-                              <option value="medium">Medium</option>
-                              <option value="high">High</option>
-                              <option value="critical">Critical</option>
-                            </select>
+                            <VSelect options={PRIORITY_OPTIONS}
+                              value={PRIORITY_OPTIONS.find(o => o.value === modalPriority) ?? null}
+                              onChange={opt => setModalPriority((opt?.value as Priority) || 'medium')}
+                              isSearchable={false} />
+                            <input type="hidden" name="priority" value={modalPriority} />
                           </div>
                           <div className="col-span-2">
                             <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">QA Reviewer</label>
@@ -2489,8 +2510,35 @@ export default function Tasks() {
                                 blockChecklistItems={live.blockChecklistItems}
                                 currentUserId={currentUser?.id ?? 0} isAssignee={isAssignee} isAdmin={isAdmin}
                                 canUnblock={isManager || canEditTask(editingTask)}
-                                onBlock={async (items, reason) => { await setTaskBlock(live.id, true, items, reason); refreshTasks(); }}
-                                onUnblock={async () => { await setTaskBlock(live.id, false); refreshTasks(); }}
+                                onBlock={async (items, hours, reason) => {
+                                  try {
+                                    // Route through the same state-machine-validated endpoint as Kanban
+                                    // drag / TaskStatusActions, so ActualHours + AllowedEdges are enforced
+                                    // consistently regardless of which UI blocks the task.
+                                    await changeTaskStatus(live.id, 'blocked', reason, hours, items);
+                                    await addActivity({ userId: currentUser?.id || 1, userName: currentUser?.name || 'Admin', action: 'blocked', targetType: 'task', targetId: live.id, targetName: live.title });
+                                    refreshTasks();
+                                    showSuccess('Task blocked');
+                                  } catch (err) {
+                                    showError(err instanceof Error ? err.message : 'Failed to block task');
+                                    // Rethrow so TaskBlockPanel's handleBlock doesn't clear the form/hours
+                                    // entered and collapse back to the button state on a failed block.
+                                    throw err;
+                                  }
+                                }}
+                                onUnblock={async (hours) => {
+                                  try {
+                                    await changeTaskStatus(live.id, 'in-progress', undefined, hours);
+                                    await addActivity({ userId: currentUser?.id || 1, userName: currentUser?.name || 'Admin', action: 'unblocked', targetType: 'task', targetId: live.id, targetName: live.title });
+                                    refreshTasks();
+                                    showSuccess('Task unblocked');
+                                  } catch (err) {
+                                    showError(err instanceof Error ? err.message : 'Failed to unblock task');
+                                    // Rethrow so TaskBlockPanel's handleUnblock doesn't clear the hours
+                                    // entered and collapse back to the button state on a failed unblock.
+                                    throw err;
+                                  }
+                                }}
                                 onResolveItem={async (itemId, comment) => { await taskService.resolveBlockItem(live.id, itemId, comment); refreshTasks(); }}
                                 onRemoveItem={async (itemId) => { await taskService.removeBlockItem(live.id, itemId); refreshTasks(); }}
                                 onItemUpdated={refreshTasks} />
@@ -2699,11 +2747,11 @@ export default function Tasks() {
                                     onChange={opt => setAssignTabNewAssigneeId(opt ? Number(opt.value) : '')}
                                     isSearchable isClearable placeholder="Select new assignee…" />
                                   {assignTabNewAssigneeId !== '' && assignTabNewAssigneeId !== live.assigneeId && (
-                                    <select value={assignTabReason} onChange={e => setAssignTabReason(e.target.value as ReasonTag)}
-                                      className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-[12px] font-bold">
-                                      <option value="">— Select reason —</option>
-                                      {(live.isBlocked ? BLOCK_REASON_TAGS : REASON_TAGS).map(r => <option key={r} value={r}>{r}</option>)}
-                                    </select>
+                                    <VSelect
+                                      options={(live.isBlocked ? BLOCK_REASON_TAGS : REASON_TAGS).map((r): SelectOption => ({ value: r, label: r }))}
+                                      value={assignTabReason ? { value: assignTabReason, label: assignTabReason } : null}
+                                      onChange={opt => setAssignTabReason((opt?.value as ReasonTag) ?? '')}
+                                      isSearchable={false} isClearable placeholder="— Select reason —" />
                                   )}
                                   {assignTabNewAssigneeId !== '' && assignTabNewAssigneeId !== live.assigneeId && assignTabReason && (
                                     <button type="button"
@@ -2807,30 +2855,23 @@ export default function Tasks() {
                     </div>
                     <ArrowRight className="text-indigo-600 animate-pulse" />
                     <div className="flex-1">
-                      <select
-                        value={newAssigneeId}
-                        onChange={e => setNewAssigneeId(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-[12px] font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        {users.map(u => <option key={u.id} value={u.id}>{u.name} - {u.role}</option>)}
-                      </select>
+                      <VSelect
+                        options={users.map((u): SelectOption => ({ value: u.id, label: `${u.name} - ${u.role}` }))}
+                        value={{ value: newAssigneeId, label: `${getAssignee(newAssigneeId)?.name ?? ''} - ${getAssignee(newAssigneeId)?.role ?? ''}` }}
+                        onChange={opt => opt && setNewAssigneeId(Number(opt.value))}
+                        isSearchable />
                     </div>
                   </div>
 
                   {newAssigneeId !== reassigningTask.assigneeId ? (
                     <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
                       <label className="block text-[10px] font-black uppercase text-amber-600 tracking-widest ml-1">Reason for Reassignment</label>
-                      <select
-                        value={reassignmentReason}
-                        onChange={e => setReassignmentReason(e.target.value as ReasonTag)}
-                        required
-                        className="w-full px-4 py-3 bg-amber-50/30 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl outline-none focus:ring-2 focus:ring-amber-500 text-[13px]"
-                      >
-                        <option value="" disabled>Select a reason...</option>
-                        {(reassigningTask.isBlocked ? BLOCK_REASON_TAGS : REASON_TAGS).map(tag => (
-                          <option key={tag} value={tag}>{tag}</option>
-                        ))}
-                      </select>
+                      <VSelect
+                        options={(reassigningTask.isBlocked ? BLOCK_REASON_TAGS : REASON_TAGS).map((tag): SelectOption => ({ value: tag, label: tag }))}
+                        value={reassignmentReason ? { value: reassignmentReason, label: reassignmentReason } : null}
+                        onChange={opt => setReassignmentReason((opt?.value as ReasonTag) ?? '')}
+                        isSearchable={false}
+                        placeholder="Select a reason..." />
                     </div>
                   ) : (
                     <div className="p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50 text-center">
@@ -2915,16 +2956,33 @@ export default function Tasks() {
       {pendingBlockTask && (
         <BlockItemsModal
           taskTitle={pendingBlockTask.title}
-          onConfirm={async (items) => {
+          onConfirm={async (items, hours) => {
             try {
-              await changeTaskStatus(pendingBlockTask.id, 'blocked', undefined, undefined, items);
+              await changeTaskStatus(pendingBlockTask.id, 'blocked', undefined, hours, items);
               await addActivity({ userId: currentUser?.id || 1, userName: currentUser?.name || 'Admin', action: 'blocked', targetType: 'task', targetId: pendingBlockTask.id, targetName: pendingBlockTask.title });
               refreshTasks();
               showSuccess('Task blocked');
+              // Only close on success — a failed block should leave the modal open (with the
+              // entered items/hours intact) so the user can see the error and retry.
+              setPendingBlockTask(null);
             } catch (err) { showError(err instanceof Error ? err.message : 'Failed to block task'); }
-            finally { setPendingBlockTask(null); }
           }}
           onClose={() => setPendingBlockTask(null)}
+        />
+      )}
+
+      {/* Drag-to-hours-required-column: hours-spent modal */}
+      {pendingHoursMove && (
+        <HoursPromptModal
+          taskTitle={pendingHoursMove.task.title}
+          statusLabel={STATUS_LABELS[pendingHoursMove.status] ?? pendingHoursMove.status}
+          onConfirm={async (hours) => {
+            const ok = await commitMove(pendingHoursMove.task, pendingHoursMove.status, hours);
+            // Only close on success — a failed move should leave the modal open (with the
+            // entered hours intact) so the user can see the error and retry, not lose their input.
+            if (ok) setPendingHoursMove(null);
+          }}
+          onClose={() => setPendingHoursMove(null)}
         />
       )}
     </PageTransition>
@@ -2934,20 +2992,25 @@ export default function Tasks() {
 // ── Inline block-items modal (drag-to-blocked) ────────────────────────────────
 function BlockItemsModal({ taskTitle, onConfirm, onClose }: {
   taskTitle: string;
-  onConfirm: (items: AddBlockItem[]) => Promise<void>;
+  onConfirm: (items: AddBlockItem[], hours: number) => Promise<void>;
   onClose: () => void;
 }) {
   const [items, setItems] = useState<AddBlockItem[]>([{ category: '', description: '' }]);
+  const [hoursInput, setHoursInput] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const hours = fromHHMM(hoursInput);
+  const hoursValid = isValidHoursEntry(hours);
+  const showHoursError = hoursInput.length === 5 && !hoursValid;
 
   const updateItem = (idx: number, field: keyof AddBlockItem, val: string) =>
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it));
 
   const handleConfirm = async () => {
     const valid = items.filter(i => i.category && i.description.trim());
-    if (!valid.length) return;
+    if (!valid.length || !hoursValid || hours == null) return;
     setSaving(true);
-    try { await onConfirm(valid); } finally { setSaving(false); }
+    try { await onConfirm(valid, hours); } finally { setSaving(false); }
   };
 
   useEffect(() => {
@@ -2981,11 +3044,15 @@ function BlockItemsModal({ taskTitle, onConfirm, onClose }: {
             {items.map((item, idx) => (
               <div key={idx} className="space-y-1.5 p-3 bg-red-50/60 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl">
                 <div className="flex items-center gap-2">
-                  <select value={item.category} onChange={e => updateItem(idx, 'category', e.target.value)}
-                    className="flex-1 px-2 py-1.5 text-[12px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 ring-red-400/40">
-                    <option value="">— Category —</option>
-                    {BLOCK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <VSelect
+                    options={BLOCK_CATEGORIES.map((c): SelectOption => ({ value: c, label: c }))}
+                    value={item.category ? { value: item.category, label: item.category } : null}
+                    onChange={opt => updateItem(idx, 'category', opt ? String(opt.value) : '')}
+                    isSearchable={false}
+                    isClearable
+                    size="sm"
+                    placeholder="— Category —"
+                    className="flex-1" />
                   {items.length > 1 && (
                     <button type="button" onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}
                       className="p-1 text-red-400 hover:text-red-600"><X size={13} /></button>
@@ -3003,15 +3070,117 @@ function BlockItemsModal({ taskTitle, onConfirm, onClose }: {
               className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-700">
               <Plus size={11} /> Add item
             </button>
+            <div className="pt-1 space-y-1.5">
+              <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">Hours Spent (before blocking)</label>
+              <TimeInput
+                value={hoursInput}
+                onChange={setHoursInput}
+                maxHours={MAX_HOURS_PER_ENTRY}
+                className={cn(
+                  'px-3 py-2 bg-white dark:bg-gray-800 border rounded-lg outline-none focus:ring-1 text-[12px] font-bold',
+                  showHoursError
+                    ? 'border-red-400 dark:border-red-600 ring-red-400/40'
+                    : 'border-gray-200 dark:border-gray-700 ring-red-400/40'
+                )}
+              />
+              <p className={cn('text-[9px]', showHoursError ? 'text-red-500 font-bold' : 'text-gray-400')}>
+                {showHoursError ? `Enter between 00:01 and ${MAX_HOURS_PER_ENTRY}:00.` : `Required · max ${MAX_HOURS_PER_ENTRY}:00 per entry.`}
+              </p>
+            </div>
           </div>
           <div className="flex gap-2 px-5 py-4 border-t border-gray-100 dark:border-gray-800 shrink-0">
             <button onClick={onClose}
               className="flex-1 py-2 text-[11px] font-black uppercase tracking-widest border border-gray-200 dark:border-gray-700 text-gray-500 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               Cancel
             </button>
-            <button onClick={handleConfirm} disabled={saving || !items.some(i => i.category && i.description.trim())}
+            <button onClick={handleConfirm} disabled={saving || !items.some(i => i.category && i.description.trim()) || !hoursValid}
               className="flex-1 py-2 text-[11px] font-black uppercase tracking-widest bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               {saving ? 'Blocking...' : 'Confirm Block'}
+            </button>
+          </div>
+        </motion.div>
+      </>
+    </AnimatePresence>
+  );
+}
+
+// ── Inline hours-spent modal (drag-to-hours-required-column) ──────────────────
+function HoursPromptModal({ taskTitle, statusLabel, onConfirm, onClose }: {
+  taskTitle: string;
+  statusLabel: string;
+  onConfirm: (hours: number) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [hoursInput, setHoursInput] = useState('');
+  const [saving, setSaving]         = useState(false);
+
+  const hours = fromHHMM(hoursInput);
+  const isValid = isValidHoursEntry(hours);
+  const showRangeError = hoursInput.length === 5 && !isValid;
+
+  const handleConfirm = async () => {
+    if (!isValid || hours == null || saving) return;
+    setSaving(true);
+    try { await onConfirm(hours); } finally { setSaving(false); }
+  };
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'Enter' && isValid && !saving) handleConfirm();
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, isValid, hoursInput, saving]);
+
+  return (
+    <AnimatePresence>
+      <>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          onClick={onClose} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 14 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 14 }}
+          transition={{ duration: 0.16 }}
+          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl z-[60] flex flex-col"
+          role="dialog" aria-modal="true"
+        >
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Hours Spent — {statusLabel}</p>
+              <h3 className="text-[14px] font-black text-gray-900 dark:text-white truncate">{taskTitle}</h3>
+            </div>
+            <button onClick={onClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-400"><X size={16} /></button>
+          </div>
+          <div className="p-5 space-y-2">
+            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400">Hours (HH:MM)</label>
+            <TimeInput
+              value={hoursInput}
+              onChange={setHoursInput}
+              maxHours={MAX_HOURS_PER_ENTRY}
+              className={cn(
+                'px-3 py-2.5 bg-gray-50 dark:bg-gray-800 border rounded-lg outline-none focus:ring-2 text-[14px] font-bold',
+                showRangeError
+                  ? 'border-red-400 dark:border-red-600 focus:ring-red-400/50'
+                  : 'border-gray-100 dark:border-gray-800 focus:ring-indigo-500'
+              )}
+            />
+            <p className={cn('text-[10px]', showRangeError ? 'text-red-500 font-bold' : 'text-gray-400')}>
+              {showRangeError
+                ? `Enter between 00:01 and ${MAX_HOURS_PER_ENTRY}:00.`
+                : `Required to move this task to ${statusLabel} · max ${MAX_HOURS_PER_ENTRY}:00 per entry.`}
+            </p>
+          </div>
+          <div className="flex gap-2 px-5 py-4 border-t border-gray-100 dark:border-gray-800 shrink-0">
+            <button onClick={onClose}
+              className="flex-1 py-2 text-[11px] font-black uppercase tracking-widest border border-gray-200 dark:border-gray-700 text-gray-500 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleConfirm} disabled={saving || !isValid}
+              className="flex-1 py-2 text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              {saving ? 'Saving...' : 'Confirm'}
             </button>
           </div>
         </motion.div>

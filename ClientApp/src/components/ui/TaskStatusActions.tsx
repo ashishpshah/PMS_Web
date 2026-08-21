@@ -2,10 +2,7 @@ import { useState } from 'react';
 import { Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { Status, STATUS_LABELS, AddBlockItem, BLOCK_CATEGORIES } from '../../types';
 import { TimeInput } from './TimeInput';
-import { fromHHMM } from '../../lib/utils';
-
-// Matches backend ActualHoursExemptStatuses
-const HOURS_EXEMPT: Status[] = ['new', 'paused', 'blocked', 'issues'];
+import { fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, HOURS_EXEMPT_EDGES } from '../../lib/utils';
 
 // Matches backend AllowedEdges
 const ALLOWED_EDGES: Record<Status, Status[]> = {
@@ -78,19 +75,24 @@ export function TaskStatusActions({
   activeBlockItemCount = 0,
   onChange,
 }: TaskStatusActionsProps) {
-  const [pendingTo, setPendingTo]     = useState<Status | null>(null);
-  const [hoursInput, setHoursInput]   = useState('');
-  const [blockOpen, setBlockOpen]     = useState(false);
-  const [blockItems, setBlockItems]   = useState<AddBlockItem[]>([emptyItem()]);
-  const [saving, setSaving]           = useState(false);
+  const [pendingTo, setPendingTo]         = useState<Status | null>(null);
+  const [hoursInput, setHoursInput]       = useState('');
+  const [blockOpen, setBlockOpen]         = useState(false);
+  const [blockItems, setBlockItems]       = useState<AddBlockItem[]>([emptyItem()]);
+  const [blockHoursInput, setBlockHoursInput] = useState('');
+  const [saving, setSaving]               = useState(false);
 
   const effAssignee = isAdmin || isAssignee;
   const ctx = { isManager, isAssignee: effAssignee, isQa, checklistComplete, activeBlockItemCount };
   const targets = ALLOWED_EDGES[currentStatus] ?? [];
 
+  const blockHours = fromHHMM(blockHoursInput);
+  const blockHoursValid = isValidHoursEntry(blockHours);
+
   const handle = async (to: Status) => {
     if (to === 'blocked') { setBlockOpen(true); return; }
-    if (HOURS_EXEMPT.includes(to)) {
+    const exempt = HOURS_EXEMPT_EDGES[currentStatus]?.includes(to) ?? false;
+    if (exempt) {
       setSaving(true);
       try { await onChange(to); } finally { setSaving(false); }
     } else {
@@ -102,7 +104,7 @@ export function TaskStatusActions({
   const confirmHours = async () => {
     if (!pendingTo) return;
     const hours = fromHHMM(hoursInput);
-    if (!hours || hours <= 0) return;
+    if (!isValidHoursEntry(hours)) return;
     setSaving(true);
     try {
       await onChange(pendingTo, undefined, hours);
@@ -113,16 +115,17 @@ export function TaskStatusActions({
 
   const confirmBlock = async () => {
     const valid = blockItems.filter(i => i.category && i.description.trim());
-    if (valid.length === 0) return;
+    if (valid.length === 0 || !blockHoursValid || blockHours == null) return;
     setSaving(true);
     try {
-      await onChange('blocked', undefined, undefined, valid);
+      await onChange('blocked', undefined, blockHours, valid);
       setBlockOpen(false);
       setBlockItems([emptyItem()]);
+      setBlockHoursInput('');
     } finally { setSaving(false); }
   };
 
-  const cancelBlock = () => { setBlockOpen(false); setBlockItems([emptyItem()]); };
+  const cancelBlock = () => { setBlockOpen(false); setBlockItems([emptyItem()]); setBlockHoursInput(''); };
 
   const updateItem = (idx: number, field: keyof AddBlockItem, val: string) =>
     setBlockItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it));
@@ -223,13 +226,22 @@ export function TaskStatusActions({
             className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-700">
             <Plus size={11} /> Add item
           </button>
+          <div className="space-y-1">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">Hours Spent (before blocking)</label>
+            <TimeInput
+              value={blockHoursInput}
+              onChange={setBlockHoursInput}
+              maxHours={MAX_HOURS_PER_ENTRY}
+              className="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 ring-red-400/40 text-[12px] font-mono"
+            />
+          </div>
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={cancelBlock}
               className="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-gray-700 text-gray-500 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               Cancel
             </button>
             <button type="button" onClick={confirmBlock}
-              disabled={saving || !blockItems.some(i => i.category && i.description.trim())}
+              disabled={saving || !blockItems.some(i => i.category && i.description.trim()) || !blockHoursValid}
               className="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               {saving ? '…' : 'Confirm Block'}
             </button>
@@ -247,10 +259,11 @@ export function TaskStatusActions({
             <TimeInput
               value={hoursInput}
               onChange={setHoursInput}
+              maxHours={MAX_HOURS_PER_ENTRY}
               className="flex-1 px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 rounded-lg outline-none focus:ring-1 ring-indigo-400/40 text-[12px] font-mono"
             />
             <button type="button" onClick={confirmHours}
-              disabled={saving || !fromHHMM(hoursInput) || (fromHHMM(hoursInput) ?? 0) <= 0}
+              disabled={saving || !isValidHoursEntry(fromHHMM(hoursInput))}
               className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               {saving ? '…' : 'Confirm'}
             </button>
@@ -259,7 +272,7 @@ export function TaskStatusActions({
               Cancel
             </button>
           </div>
-          <p className="text-[9px] text-gray-400 normal-case tracking-normal">Format HH:MM · required to move to {STATUS_LABELS[pendingTo]}.</p>
+          <p className="text-[9px] text-gray-400 normal-case tracking-normal">Format HH:MM (max {MAX_HOURS_PER_ENTRY}:00) · required to move to {STATUS_LABELS[pendingTo]}.</p>
         </div>
       )}
     </div>

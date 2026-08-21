@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { ShieldAlert, ShieldCheck, AlertTriangle, Plus, Trash2, CheckCircle2, X } from 'lucide-react';
 import { TaskBlockEntry, BlockChecklistItem, AddBlockItem, BLOCK_CATEGORIES } from '../../types';
-import { formatDateTime } from '../../lib/utils';
+import { formatDateTime, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry } from '../../lib/utils';
+import { TimeInput } from './TimeInput';
+
+// Both blocking and unblocking are non-exempt transitions (Services/TaskService.cs
+// AllowedEdges), so ActualHours is required here too.
 
 interface TaskBlockPanelProps {
   taskId: number;
@@ -12,8 +16,8 @@ interface TaskBlockPanelProps {
   isAssignee: boolean;
   isAdmin: boolean;
   canUnblock: boolean;
-  onBlock: (items: AddBlockItem[], reason?: string) => Promise<void>;
-  onUnblock: () => Promise<void>;
+  onBlock: (items: AddBlockItem[], hours: number, reason?: string) => Promise<void>;
+  onUnblock: (hours: number) => Promise<void>;
   onResolveItem?: (itemId: number, comment?: string) => Promise<void>;
   onRemoveItem?: (itemId: number) => Promise<void>;
   onItemUpdated?: () => void;
@@ -36,6 +40,9 @@ export function TaskBlockPanel({
 }: TaskBlockPanelProps) {
   const [showForm, setShowForm]   = useState(false);
   const [blockItems, setBlockItems] = useState<AddBlockItem[]>([emptyItem()]);
+  const [hoursInput, setHoursInput] = useState('');
+  const [showUnblockForm, setShowUnblockForm] = useState(false);
+  const [unblockHoursInput, setUnblockHoursInput] = useState('');
   const [saving, setSaving]       = useState(false);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [resolveComment, setResolveComment] = useState('');
@@ -48,23 +55,34 @@ export function TaskBlockPanel({
   const resolvedItems = blockChecklistItems.filter(i => i.status === 'resolved');
   const activeBlocks  = blockEntries.filter(b => b.isActive);
 
+  const hours = fromHHMM(hoursInput);
+  const hoursValid = isValidHoursEntry(hours);
+  const unblockHours = fromHHMM(unblockHoursInput);
+  const unblockHoursValid = isValidHoursEntry(unblockHours);
+
   const updateItem = (idx: number, field: keyof AddBlockItem, val: string) =>
     setBlockItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it));
 
   const handleBlock = async () => {
     const valid = blockItems.filter(i => i.category && i.description.trim());
-    if (!valid.length) return;
+    if (!valid.length || !hoursValid || hours == null) return;
     setSaving(true);
     try {
-      await onBlock(valid);
+      await onBlock(valid, hours);
       setBlockItems([emptyItem()]);
+      setHoursInput('');
       setShowForm(false);
     } finally { setSaving(false); }
   };
 
   const handleUnblock = async () => {
+    if (!unblockHoursValid || unblockHours == null) return;
     setSaving(true);
-    try { await onUnblock(); } finally { setSaving(false); }
+    try {
+      await onUnblock(unblockHours);
+      setUnblockHoursInput('');
+      setShowUnblockForm(false);
+    } finally { setSaving(false); }
   };
 
   const handleResolve = async (itemId: number) => {
@@ -181,12 +199,12 @@ export function TaskBlockPanel({
 
       {/* Unblock / Block buttons */}
       <div className="flex items-center gap-2 flex-wrap">
-        {canUnblock && isBlocked && (
-          <button onClick={handleUnblock} disabled={saving || activeItems.length > 0}
+        {canUnblock && isBlocked && !showUnblockForm && (
+          <button onClick={() => setShowUnblockForm(true)} disabled={saving || activeItems.length > 0}
             title={activeItems.length > 0 ? `Resolve ${activeItems.length} item(s) first` : 'Unblock task'}
             className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest border border-emerald-200 dark:border-emerald-800 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             <ShieldCheck size={12} />
-            {saving ? 'Saving...' : activeItems.length > 0 ? `Resolve ${activeItems.length} item(s) first` : 'Unblock Task'}
+            {activeItems.length > 0 ? `Resolve ${activeItems.length} item(s) first` : 'Unblock Task'}
           </button>
         )}
         {canBlock && !isBlocked && !showForm && (
@@ -196,6 +214,30 @@ export function TaskBlockPanel({
           </button>
         )}
       </div>
+
+      {/* Unblock hours form */}
+      {showUnblockForm && canUnblock && (
+        <div className="p-3 bg-emerald-50/60 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/50 rounded-lg space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Hours Spent (while blocked)</p>
+          <TimeInput
+            value={unblockHoursInput}
+            onChange={setUnblockHoursInput}
+            maxHours={MAX_HOURS_PER_ENTRY}
+            className="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-1 ring-emerald-400/40 text-[12px] font-mono"
+          />
+          <div className="flex gap-2">
+            <button onClick={() => { setShowUnblockForm(false); setUnblockHoursInput(''); }}
+              className="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-gray-700 text-gray-500 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleUnblock} disabled={saving || !unblockHoursValid}
+              className="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-white rounded hover:bg-emerald-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-1">
+              <ShieldCheck size={11} />
+              {saving ? 'Saving...' : 'Confirm Unblock'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Block items form */}
       {showForm && canBlock && (
@@ -231,12 +273,21 @@ export function TaskBlockPanel({
             className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-red-700">
             <Plus size={11} /> Add item
           </button>
+          <div className="space-y-1">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Hours Spent (before blocking)</p>
+            <TimeInput
+              value={hoursInput}
+              onChange={setHoursInput}
+              maxHours={MAX_HOURS_PER_ENTRY}
+              className="px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded outline-none focus:ring-1 ring-red-400/40 text-[12px] font-mono"
+            />
+          </div>
           <div className="flex gap-2">
-            <button onClick={() => { setShowForm(false); setBlockItems([emptyItem()]); }}
+            <button onClick={() => { setShowForm(false); setBlockItems([emptyItem()]); setHoursInput(''); }}
               className="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest border border-gray-200 dark:border-gray-700 text-gray-500 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               Cancel
             </button>
-            <button onClick={handleBlock} disabled={saving || !blockItems.some(i => i.category && i.description.trim())}
+            <button onClick={handleBlock} disabled={saving || !blockItems.some(i => i.category && i.description.trim()) || !hoursValid}
               className="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest bg-red-500 text-white rounded hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-1">
               <ShieldAlert size={11} />
               {saving ? 'Blocking...' : 'Confirm Block'}

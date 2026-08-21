@@ -13,6 +13,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
 import { permissionService, PageModule, UserPermission, PermissionUpdate } from '../services/permission.service';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
+import { VSelect, SelectOption } from '../components/forms/VSelect';
 import { useSweetAlert } from '../context/SweetAlertContext';
 import { showError, showSuccess } from '../lib/toast';
 
@@ -323,15 +324,14 @@ export default function UserDetails() {
                                   <span className="text-[8px] uppercase font-black text-gray-400 tracking-tighter">{pm.route}</span>
                                 </div>
                                 <div className="col-span-6 flex justify-end">
-                                  <select
-                                    value={localPermissions[pm.id] || 0}
-                                    onChange={(e) => updateLocalPermission(pm.id, Number(e.target.value))}
-                                    className="text-[10px] px-2 py-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded outline-none focus:ring-1 ring-indigo-500/30"
-                                  >
-                                    {PERMISSION_OPTIONS.map(opt => (
-                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                  </select>
+                                  <VSelect
+                                    options={PERMISSION_OPTIONS}
+                                    value={PERMISSION_OPTIONS.find(o => o.value === (localPermissions[pm.id] || 0)) ?? null}
+                                    onChange={(opt: SelectOption | null) => updateLocalPermission(pm.id, opt ? Number(opt.value) : 0)}
+                                    isSearchable={false}
+                                    size="sm"
+                                    className="w-48"
+                                  />
                                 </div>
                               </div>
                             ))}

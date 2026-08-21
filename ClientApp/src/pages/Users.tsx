@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
+import { VSelect, SelectOption } from '../components/forms/VSelect';
 import { User } from '../types';
 import { cn, copyToClipboard } from '../lib/utils';
 import { validateName, validateEmail, validateContact, validatePassword, collectErrors } from '../lib/validation';
@@ -314,15 +315,14 @@ export default function Users() {
             </div>
 
             {/* Status dropdown */}
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-              className="h-[30px] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-[12px] font-semibold text-gray-700 dark:text-gray-200 px-2 pr-6 focus:outline-none focus:ring-2 focus:ring-indigo-400 shrink-0"
-            >
-              {STATUS_FILTER_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <VSelect
+              options={STATUS_FILTER_OPTIONS.map((opt): SelectOption => ({ value: opt.value, label: opt.label }))}
+              value={STATUS_FILTER_OPTIONS.map((opt): SelectOption => ({ value: opt.value, label: opt.label })).find(o => o.value === statusFilter) ?? null}
+              onChange={opt => opt && setStatusFilter(opt.value as StatusFilter)}
+              isSearchable={false}
+              size="sm"
+              className="w-36 shrink-0"
+            />
 
             {/* View toggle button group */}
             <div className="flex bg-gray-50 dark:bg-gray-900 rounded-md p-1 border border-gray-100 dark:border-gray-800 shrink-0">
@@ -539,19 +539,21 @@ export default function Users() {
             </div>
             <div>
               <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Role</label>
-              <select
-                name="roleId"
-                required
-                value={selectedRoleId}
-                onChange={(e) => setSelectedRoleId(Number(e.target.value))}
-                disabled={editingUser?.roleId === 1}
-                className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60"
-              >
-                <option value={0}>-- Select --</option>
-                {roles.filter(r => r.id !== 1 || editingUser?.roleId === 1).map(r => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
+              {(() => {
+                const roleOptions: SelectOption[] = roles
+                  .filter(r => r.id !== 1 || editingUser?.roleId === 1)
+                  .map(r => ({ value: r.id, label: r.name }));
+                return (
+                  <VSelect
+                    options={roleOptions}
+                    value={roleOptions.find(o => o.value === selectedRoleId) ?? null}
+                    onChange={opt => setSelectedRoleId(opt ? Number(opt.value) : 0)}
+                    disabled={editingUser?.roleId === 1}
+                    placeholder="-- Select --"
+                  />
+                );
+              })()}
+              <input type="hidden" name="roleId" value={selectedRoleId} />
               {editingUser?.roleId === 1 && (
                 <p className="text-[10px] text-gray-400 mt-1">System Admin role is fixed for this account.</p>
               )}

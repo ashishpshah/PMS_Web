@@ -22,7 +22,7 @@ import { useSweetAlert } from '../../context/SweetAlertContext';
 
 export function QuickViewContainer() {
   const { activeType, activeId, closeQuickView, openQuickView, goBack, canGoBack } = useQuickView();
-  const { projects, tasks, users, activities, reassignTask, addChecklistItem, toggleChecklistItem, updateChecklistItem, deleteChecklistItem, markAllChecklistComplete, setTaskBlock, startTask, changeTaskStatus, toggleTaskCondition, addTaskIssueEntry, resolveTaskIssueEntry, deleteTaskIssueEntry, addTaskReviewIssue, resolveTaskReviewIssue, deleteTaskReviewIssue, completeReview } = useData();
+  const { projects, tasks, users, activities, reassignTask, addChecklistItem, toggleChecklistItem, updateChecklistItem, deleteChecklistItem, markAllChecklistComplete, startTask, changeTaskStatus, toggleTaskCondition, addTaskIssueEntry, resolveTaskIssueEntry, deleteTaskIssueEntry, addTaskReviewIssue, resolveTaskReviewIssue, deleteTaskReviewIssue, completeReview } = useData();
   const { user: currentUser, isAdmin, isSystemAdmin } = useAuth();
   const { confirmAlert } = useSweetAlert();
   const [isTaskReassignOpen, setIsTaskReassignOpen] = useState(false);
@@ -842,13 +842,20 @@ export function QuickViewContainer() {
                     isAssignee={isAssignee}
                     isAdmin={isAdmin}
                     canUnblock={canUnblock || isAdmin}
-                    onBlock={async (items: AddBlockItem[], reason?: string) => {
-                      await setTaskBlock(task.id, true, items, reason);
-                      showSuccess('Task blocked');
+                    onBlock={async (items: AddBlockItem[], hours: number, reason?: string) => {
+                      // Route through the same state-machine-validated endpoint as Kanban drag /
+                      // TaskStatusActions, so ActualHours + AllowedEdges are enforced consistently
+                      // regardless of which UI blocks the task.
+                      try {
+                        await changeTaskStatus(task.id, 'blocked', reason, hours, items);
+                        showSuccess('Task blocked');
+                      } catch (e) { showError(e instanceof Error ? e.message : 'Failed to block task'); }
                     }}
-                    onUnblock={async () => {
-                      await setTaskBlock(task.id, false);
-                      showSuccess('Task unblocked');
+                    onUnblock={async (hours: number) => {
+                      try {
+                        await changeTaskStatus(task.id, 'in-progress', undefined, hours);
+                        showSuccess('Task unblocked');
+                      } catch (e) { showError(e instanceof Error ? e.message : 'Failed to unblock task'); }
                     }}
                     onResolveItem={async (itemId, comment) => {
                       await taskService.resolveBlockItem(task.id, itemId, comment);

@@ -489,22 +489,22 @@ function DailyUtilizationSection({
               />
             );
           })()}
-          <select
-            value={month}
-            onChange={e => onMonthChange(Number(e.target.value))}
-            className="h-8 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-[12px] font-semibold text-gray-700 dark:text-gray-200 px-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          >
-            {UTIL_MONTH_NAMES.map((name, i) => (
-              <option key={name} value={i + 1}>{name}</option>
-            ))}
-          </select>
-          <select
-            value={year}
-            onChange={e => onYearChange(Number(e.target.value))}
-            className="h-8 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-[12px] font-semibold text-gray-700 dark:text-gray-200 px-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          >
-            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+          <VSelect
+            options={UTIL_MONTH_NAMES.map((name, i): SelectOption => ({ value: i + 1, label: name }))}
+            value={{ value: month, label: UTIL_MONTH_NAMES[month - 1] }}
+            onChange={opt => opt && onMonthChange(Number(opt.value))}
+            isSearchable={false}
+            size="sm"
+            className="w-28"
+          />
+          <VSelect
+            options={yearOptions.map((y): SelectOption => ({ value: y, label: String(y) }))}
+            value={{ value: year, label: String(year) }}
+            onChange={opt => opt && onYearChange(Number(opt.value))}
+            isSearchable={false}
+            size="sm"
+            className="w-24"
+          />
         </div>
       </div>
 

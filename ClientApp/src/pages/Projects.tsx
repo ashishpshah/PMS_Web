@@ -190,10 +190,14 @@ export default function Projects() {
     <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-50 dark:border-gray-900 bg-gray-50/30 dark:bg-gray-900/30">
       <div className="flex items-center gap-2 text-[11px] text-gray-500">
         <span className="whitespace-nowrap">Rows per page:</span>
-        <select value={projPageSize} onChange={e => { setProjPageSize(Number(e.target.value)); setProjPage(1); }}
-          className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer">
-          {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
+        <VSelect
+          options={[10, 25, 50, 100].map((n): SelectOption => ({ value: n, label: String(n) }))}
+          value={{ value: projPageSize, label: String(projPageSize) }}
+          onChange={opt => { if (opt) { setProjPageSize(Number(opt.value)); setProjPage(1); } }}
+          isSearchable={false}
+          size="sm"
+          className="w-20"
+        />
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
         <span className="whitespace-nowrap">

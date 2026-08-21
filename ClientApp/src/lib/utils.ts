@@ -1,9 +1,30 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Status } from '../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+// A single HH:MM "hours spent in this action" entry (actual hours logged on a status
+// transition / block / unblock) can't exceed one calendar day. This does NOT apply to a
+// task's overall EstimatedHours, which is a total-effort figure and is legitimately allowed
+// to exceed 24h (see backend DTOs/GeneralDtos.cs CreateTaskDto: [Range(0.01, 100000)]).
+export const MAX_HOURS_PER_ENTRY = 24;
+
+/** True when hoursInput parses to a value in (0, MAX_HOURS_PER_ENTRY]. */
+export function isValidHoursEntry(hours: number | null | undefined): hours is number {
+  return hours != null && hours > 0 && hours <= MAX_HOURS_PER_ENTRY;
+}
+
+// Mirrors backend AllowedEdges' per-edge ActualHoursExempt (Services/TaskService.cs).
+// 'blocked' is intentionally absent from every entry — that transition is never exempt and
+// is always handled via its own hours-collecting modal/form.
+export const HOURS_EXEMPT_EDGES: Partial<Record<Status, Status[]>> = {
+  'new':          ['in-progress'],
+  'in-progress':  ['paused'],
+  'under-review': ['issues'],
+};
 
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {

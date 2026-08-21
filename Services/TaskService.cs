@@ -417,20 +417,47 @@ namespace TaskManagement.Services
             "new", "in-progress", "paused", "blocked", "under-review", "issues", "completed"
         };
 
-        private static readonly Dictionary<string, HashSet<string>> AllowedEdges = new(StringComparer.OrdinalIgnoreCase)
+        // Status state machine: from → { to → ActualHoursExempt }. Each edge carries its own
+        // requirement for ActualHours, rather than deriving it from the target status alone.
+        private static readonly Dictionary<string, Dictionary<string, bool>> AllowedEdges = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["new"]          = new(StringComparer.OrdinalIgnoreCase) { "in-progress" },
-            ["in-progress"]  = new(StringComparer.OrdinalIgnoreCase) { "paused", "blocked", "under-review" },
-            ["paused"]       = new(StringComparer.OrdinalIgnoreCase) { "in-progress" },
-            ["blocked"]      = new(StringComparer.OrdinalIgnoreCase) { "in-progress" },
-            ["under-review"] = new(StringComparer.OrdinalIgnoreCase) { "completed", "issues" },
-            ["issues"]       = new(StringComparer.OrdinalIgnoreCase) { "in-progress" },
-            ["completed"]    = new(StringComparer.OrdinalIgnoreCase) { "in-progress" }, // reopen (manager only)
+            ["new"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["in-progress"] = true,  // starting work — no prior hours to report
+            },
+            ["in-progress"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["paused"]       = true,  // pausing — hours are logged cumulatively on resume
+                ["blocked"]      = false, // reporting a blocker — must log hours worked before hitting it
+                ["under-review"] = false, // submitting for review — must log hours worked
+            },
+            ["paused"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["in-progress"] = false, // resuming — logs hours spent while paused/investigating
+            },
+            ["blocked"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["in-progress"] = false, // unblocking — logs hours spent resolving the blocker
+            },
+            ["under-review"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["completed"] = false, // QA approve — logs review hours
+                ["issues"]    = true,  // QA fail — no hours needed to reject
+            },
+            ["issues"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["in-progress"] = false, // fixing issues — logs hours spent addressing them
+            },
+            ["completed"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["in-progress"] = false, // reopen (manager only) — logs hours spent on the reopen work
+            },
         };
 
-        // ActualHours not required when entering these statuses.
-        private static readonly HashSet<string> ActualHoursExemptStatuses =
-            new(StringComparer.OrdinalIgnoreCase) { "new", "paused", "blocked", "issues" };
+        // True when the given (from, to) edge doesn't require ActualHours. False (including for
+        // an edge that doesn't exist) so callers still fail closed via the AllowedEdges lookup.
+        private static bool IsActualHoursExempt(string from, string to) =>
+            AllowedEdges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var exempt) && exempt;
 
         // Derives the human-readable action name from a (fromStatus, toStatus) pair.
         private static string DeriveActionName(string from, string to) =>
@@ -455,11 +482,11 @@ namespace TaskManagement.Services
             if (!ValidStatuses.Contains(to))
                 return $"Invalid status '{to}'. Allowed: {string.Join(", ", ValidStatuses)}";
 
-            if (!AllowedEdges.TryGetValue(from, out var targets) || !targets.Contains(to))
+            if (!AllowedEdges.TryGetValue(from, out var edges) || !edges.ContainsKey(to))
                 return $"Cannot move a task from '{from}' to '{to}'.";
 
-            // Actual hours compulsory except for exempt target statuses.
-            if (requireActualHours && !ActualHoursExemptStatuses.Contains(to)
+            // Actual hours compulsory except for edges explicitly marked exempt.
+            if (requireActualHours && !IsActualHoursExempt(from, to)
                 && (!actualHours.HasValue || actualHours.Value <= 0))
                 return $"Actual hours are required when moving a task to '{to}'.";
 
@@ -996,7 +1023,7 @@ namespace TaskManagement.Services
                 Action = actionName,
                 ChangedById = userId,
                 Reason = dto.Reason,
-                ActualHours = ActualHoursExemptStatuses.Contains(to) ? null : dto.ActualHours,
+                ActualHours = IsActualHoursExempt(from, to) ? null : dto.ActualHours,
                 ChangedAt = AppClock.Now
             });
             _context.Activities.Add(new Activity
