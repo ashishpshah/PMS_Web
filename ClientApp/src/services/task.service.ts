@@ -1,6 +1,6 @@
 import { apiRequest, apiRequestWithMeta, getAccessToken } from '../lib/api';
 import { getApiUrl } from '../config/dataSource';
-import { Task, Attachment, TaskComment, ChecklistItem, TaskAssignmentHistory, TaskBlockEntry, ReasonTag, LinkedTaskRef, Status, TaskStatusHistory, TaskEffort, DashboardEffort, DashboardStats, TaskConditionHistory, TaskIssueEntry, TaskReviewIssue, BlockChecklistItem, AddBlockItem, ReviewChecklistItem } from '../types';
+import { Task, Attachment, TaskComment, ChecklistItem, TaskAssignmentHistory, TaskBlockEntry, ReasonTag, LinkedTaskRef, Status, TaskStatusHistory, TaskEffort, TaskConditionHistory, TaskIssueEntry, TaskReviewIssue, BlockChecklistItem, AddBlockItem, ReviewChecklistItem } from '../types';
 
 interface ApiChecklistItemDto {
   id: number;
@@ -210,6 +210,7 @@ export interface TaskFilters {
   priority?: string;
   projectId?: number;
   assigneeId?: number;
+  createdById?: number;
   search?: string;
 }
 
@@ -403,6 +404,7 @@ export const taskService = {
     if (filters?.priority)  params.set('priority',  filters.priority);
     if (filters?.projectId) params.set('projectId', String(filters.projectId));
     if (filters?.assigneeId) params.set('assigneeId', String(filters.assigneeId));
+    if (filters?.createdById) params.set('createdById', String(filters.createdById));
     if (filters?.search)    params.set('search',    filters.search);
     const { data, meta } = await apiRequestWithMeta<ApiTaskDto[]>(`/tasks?${params}`);
     return {
@@ -588,18 +590,6 @@ export const taskService = {
         isProductive: t.isProductive,
       })),
     };
-  },
-
-  async getDashboardStats(): Promise<DashboardStats> {
-    return apiRequest<DashboardStats>('/tasks/dashboard-stats');
-  },
-
-  async getEffortStats(fromIso?: string, toIso?: string): Promise<DashboardEffort> {
-    const qs = new URLSearchParams();
-    if (fromIso) qs.set('from', fromIso);
-    if (toIso) qs.set('to', toIso);
-    const q = qs.toString();
-    return apiRequest<DashboardEffort>(`/tasks/effort-stats${q ? `?${q}` : ''}`);
   },
 
   async delete(id: number): Promise<void> {

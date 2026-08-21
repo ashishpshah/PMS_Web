@@ -291,6 +291,10 @@ namespace TaskManagement.DTOs
 
     public class DashboardStatsDto
     {
+        // Filter window echoed back for display; null FilterUserId means org-wide (admin "All Users").
+        public int? FilterUserId { get; set; }
+        public DateTime? FromUtc { get; set; }
+        public DateTime? ToUtc { get; set; }
         public int TotalProjects { get; set; }
         public int TotalTasks { get; set; }
         public int ActiveUsers { get; set; }
@@ -300,6 +304,56 @@ namespace TaskManagement.DTOs
         public ReviewChecklistStatsDto ReviewChecklist { get; set; } = new();
         public BlockerStatsDto Blockers { get; set; } = new();
         public IssueStatsDto Issues { get; set; } = new();
+    }
+
+    // ── Project/Teammate x Status breakdown matrix (admin-only dashboard widget) ─
+    public class ProjectStatusMatrixDto
+    {
+        public string Axis { get; set; } = "project"; // "project" | "assignee"
+        public List<MatrixRowDto> Rows { get; set; } = new();
+    }
+
+    public class MatrixRowDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public Dictionary<string, int> CountsByStatus { get; set; } = new();
+        public int Total { get; set; }
+        // Assignee-axis only (0 on project-axis rows):
+        // AssignedHours = sum of EstimatedHours across the user's tasks in scope (workload).
+        // WorkingHours = computed productive+paused time (EffortHelpers, office-hours-clipped),
+        // attributed to the task's current assignee, within the requested date window.
+        public decimal AssignedHours { get; set; }
+        public decimal WorkingHours { get; set; }
+    }
+
+    // ── At-risk snapshot (overdue tasks + stalled projects), current-state only ──
+    public class AtRiskDto
+    {
+        public List<OverdueTaskDto> OverdueTasks { get; set; } = new();
+        public List<StalledProjectDto> StalledProjects { get; set; } = new();
+    }
+
+    public class OverdueTaskDto
+    {
+        public int Id { get; set; }
+        public string? Code { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime DueDate { get; set; }
+        public int DaysOverdue { get; set; }
+        public int? AssignedToId { get; set; }
+        public string? AssignedToName { get; set; }
+    }
+
+    public class StalledProjectDto
+    {
+        public int Id { get; set; }
+        public string? Code { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public int DaysSinceActivity { get; set; }
+        public int OwnerId { get; set; }
+        public string? OwnerName { get; set; }
     }
 
     public class StatusCountDto

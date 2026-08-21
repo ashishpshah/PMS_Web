@@ -36,12 +36,12 @@ namespace TaskManagement.Controllers
         public async Task<ActionResult<ApiResponse<List<TaskDto>>>> GetAll(
             [FromQuery] string? status, [FromQuery] string? priority,
             [FromQuery] int? projectId, [FromQuery] int? assigneeId,
-            [FromQuery] string? search,
+            [FromQuery] string? search, [FromQuery] int? createdById,
             [FromQuery] int page = 1, [FromQuery] int pageSize = 100)
         {
             if (!await _authService.CanViewAsync("/tasks"))
                 return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view tasks" });
-            var result = await _taskService.GetAllTasksAsync(status, priority, projectId, assigneeId, search, page, pageSize, HttpContext.RequestAborted);
+            var result = await _taskService.GetAllTasksAsync(status, priority, projectId, assigneeId, search, createdById, page, pageSize, HttpContext.RequestAborted);
             return Ok(result);
         }
 
@@ -143,9 +143,47 @@ namespace TaskManagement.Controllers
         }
 
         [HttpGet("dashboard-stats")]
-        public async Task<ActionResult<ApiResponse<DashboardStatsDto>>> GetStats()
+        public async Task<ActionResult<ApiResponse<DashboardStatsDto>>> GetStats(
+            [FromQuery] int? userId, [FromQuery] DateTime? from, [FromQuery] DateTime? to)
         {
-            var result = await _taskService.GetDashboardStatsAsync(HttpContext.RequestAborted);
+            var requestingUserId = _authService.GetCurrentUserId();
+            if (requestingUserId <= 0)
+                return Unauthorized(new ApiResponse<DashboardStatsDto> { Success = false, Message = "Unauthorized" });
+            var isAdmin = await _authService.IsAdminAsync();
+            var result = await _taskService.GetDashboardStatsAsync(userId, from, to, requestingUserId, isAdmin, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+
+        // Project axis stays admin-only (org-wide breakdown). Teammate axis is open to
+        // every authenticated user and always shows all teammates by default — the
+        // Task Distribution list view intentionally does not scope this to "just me"
+        // for non-admins. `userId` remains an optional display filter (used by the
+        // admin-only Breakdown Matrix section to narrow to one person), not a
+        // per-role restriction.
+        [HttpGet("status-matrix")]
+        public async Task<ActionResult<ApiResponse<ProjectStatusMatrixDto>>> GetStatusMatrix(
+            [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] string axis = "project", [FromQuery] int? userId = null)
+        {
+            var requestingUserId = _authService.GetCurrentUserId();
+            if (requestingUserId <= 0)
+                return Unauthorized(new ApiResponse<ProjectStatusMatrixDto> { Success = false, Message = "Unauthorized" });
+            var isAdmin = await _authService.IsAdminAsync();
+            var isProjectAxis = string.Equals(axis, "project", StringComparison.OrdinalIgnoreCase);
+            if (isProjectAxis && !isAdmin)
+                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "Only admins can view the project breakdown matrix" });
+            var result = await _taskService.GetProjectStatusMatrixAsync(from, to, axis, userId, HttpContext.RequestAborted);
+            return Ok(result);
+        }
+
+        // Current-state snapshot of overdue tasks + stalled projects (not date-range filterable).
+        [HttpGet("at-risk")]
+        public async Task<ActionResult<ApiResponse<AtRiskDto>>> GetAtRisk([FromQuery] int? userId)
+        {
+            var requestingUserId = _authService.GetCurrentUserId();
+            if (requestingUserId <= 0)
+                return Unauthorized(new ApiResponse<AtRiskDto> { Success = false, Message = "Unauthorized" });
+            var isAdmin = await _authService.IsAdminAsync();
+            var result = await _taskService.GetAtRiskAsync(userId, requestingUserId, isAdmin, HttpContext.RequestAborted);
             return Ok(result);
         }
 
@@ -214,12 +252,19 @@ namespace TaskManagement.Controllers
             return Ok(result);
         }
 
-        // Org-wide effort summary for dashboard widgets. Optional UTC window [from, to).
+        // Effort summary for dashboard widgets. Optional UTC window [from, to) and optional
+        // userId (admins may pass any user or omit for org-wide; non-admins are always
+        // clamped to their own id).
         [HttpGet("effort-stats")]
         public async Task<ActionResult<ApiResponse<DashboardEffortDto>>> GetEffortStats(
-            [FromQuery] DateTime? from, [FromQuery] DateTime? to)
+            [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] int? userId)
         {
-            var result = await _taskService.GetEffortStatsAsync(from, to, HttpContext.RequestAborted);
+            var requestingUserId = _authService.GetCurrentUserId();
+            if (requestingUserId <= 0)
+                return Unauthorized(new ApiResponse<DashboardEffortDto> { Success = false, Message = "Unauthorized" });
+            var isAdmin = await _authService.IsAdminAsync();
+            var filterUserId = isAdmin ? userId : requestingUserId;
+            var result = await _taskService.GetEffortStatsAsync(from, to, filterUserId, HttpContext.RequestAborted);
             return Ok(result);
         }
 

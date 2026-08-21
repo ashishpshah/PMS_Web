@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { Project, ProjectStatus, Attachment } from '../types';
+import { Project, ProjectStatus, Attachment, PROJECT_STATUS_LABELS, PROJECT_STATUS_BADGE_VARIANT } from '../types';
 import { cn, formatDate, formatDateTime, toInputDate } from '../lib/utils';
 import { FileUploader } from '../components/ui/FileUploader';
 import { DateInput } from '../components/ui/DateInput';
@@ -419,8 +419,8 @@ export default function Projects() {
                 <CardContent className="p-4 flex flex-col h-full">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
-                      <Badge variant={project.status === 'active' ? 'success' : project.status === 'completed' ? 'info' : 'warning'}>
-                        {project.status}
+                      <Badge variant={PROJECT_STATUS_BADGE_VARIANT[project.status]}>
+                        {PROJECT_STATUS_LABELS[project.status]}
                       </Badge>
                       <InteractiveLink type="project" id={project.id} className="block mt-1.5">
                         {project.code && (
@@ -558,8 +558,8 @@ export default function Projects() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={project.status === 'active' ? 'success' : project.status === 'completed' ? 'info' : 'warning'}>
-                          {project.status}
+                        <Badge variant={PROJECT_STATUS_BADGE_VARIANT[project.status]}>
+                          {PROJECT_STATUS_LABELS[project.status]}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-[11px] font-mono text-gray-500 whitespace-nowrap">
