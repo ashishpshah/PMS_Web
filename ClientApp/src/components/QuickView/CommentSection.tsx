@@ -123,8 +123,8 @@ export function CommentSection({ taskId, comments, canComment = true }: CommentS
       await addTaskComment(taskId, { text: newComment.trim() });
       setNewComment('');
       textareaRef.current?.focus();
-    } catch {
-      showError('Failed to send comment');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to send comment');
     } finally {
       setIsSending(false);
     }

@@ -380,11 +380,6 @@ export function QuickViewContainer() {
                       ⏸ Paused
                     </span>
                   )}
-                  {task.isOverdue && (
-                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded text-[8px] font-black uppercase tracking-wider">
-                      ⚑ Overdue
-                    </span>
-                  )}
                   {task.module && (
                     <span className="text-[8px] font-black uppercase tracking-wider text-indigo-500/70 border-l border-gray-100 dark:border-gray-800 pl-1.5">
                       {task.module}
@@ -1026,8 +1021,8 @@ export function QuickViewContainer() {
                       try {
                         await userService.resetPassword(user.id);
                         showSuccess(`Password reset to default for ${user.name}.`);
-                      } catch {
-                        showError('Failed to reset password.');
+                      } catch (err) {
+                        showError(err instanceof Error ? err.message : 'Failed to reset password.');
                       }
                     }
                   )}

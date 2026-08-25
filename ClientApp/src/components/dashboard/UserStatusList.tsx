@@ -16,8 +16,7 @@ const fmtHours = (h: number) => (h % 1 === 0 ? h.toFixed(0) : h.toFixed(1));
 
 // Task Distribution's "list view": one row per user — User, every task
 // status as its own column, Estimated Hours (sum of EstimatedHours on their
-// tasks), Working Hours (computed office-hours-clipped effort — not Work
-// Diary data), and a button linking to that user's filtered task list.
+// tasks), Total Hours (computed effort from status transitions), and a button linking to that user's filtered task list.
 export function UserStatusList({ from, to, userId }: Props) {
   const [matrix, setMatrix] = useState<ProjectStatusMatrix | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,6 +32,11 @@ export function UserStatusList({ from, to, userId }: Props) {
   }, [from, to, userId]);
 
   const rows = matrix?.rows ?? [];
+
+  // Totals across all users
+  const totalTasks = rows.reduce((sum, r) => sum + r.total, 0);
+  const totalEstHours = rows.reduce((sum, r) => sum + r.assignedHours, 0);
+  const totalActualHours = rows.reduce((sum, r) => sum + r.workingHours, 0);
 
   if (loading) return <p className="text-sm text-gray-400 text-center py-6">Loading…</p>;
   if (rows.length === 0) return <p className="text-sm text-gray-400 text-center py-6">No tasks for this range</p>;
@@ -50,7 +54,7 @@ export function UserStatusList({ from, to, userId }: Props) {
             ))}
             <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Total</th>
             <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Est. Hours</th>
-            <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Working Hours</th>
+            <th className="px-3 py-2.5 text-[9px] font-black uppercase tracking-widest text-gray-400 text-right">Total Hours</th>
             <th className="px-3 py-2.5" />
           </tr>
         </thead>
@@ -85,6 +89,19 @@ export function UserStatusList({ from, to, userId }: Props) {
               </td>
             </tr>
           ))}
+          {/* Totals row */}
+          <tr className="bg-gray-50 dark:bg-gray-900/50 border-t-2 border-gray-200 dark:border-gray-700">
+            <td className="px-3 py-2.5 text-[11px] font-black text-gray-700 dark:text-gray-300">TOTAL</td>
+            {STATUS_CFG.map(s => (
+              <td key={s.key} className="px-3 py-2.5 text-[11px] font-mono font-black text-right text-gray-500 dark:text-gray-400">
+                {rows.reduce((sum, r) => sum + (r.countsByStatus[s.key] ?? 0), 0)}
+              </td>
+            ))}
+            <td className="px-3 py-2.5 text-[11px] font-mono font-black text-right text-gray-800 dark:text-gray-200">{totalTasks}</td>
+            <td className="px-3 py-2.5 text-[11px] font-mono font-black text-right text-gray-500 dark:text-gray-400">{fmtHours(totalEstHours)}h</td>
+            <td className="px-3 py-2.5 text-[11px] font-mono font-black text-right text-indigo-600">{fmtHours(totalActualHours)}h</td>
+            <td />
+          </tr>
         </tbody>
       </table>
     </div>

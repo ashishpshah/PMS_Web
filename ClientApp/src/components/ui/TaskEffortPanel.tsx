@@ -29,9 +29,18 @@ const EFFORT_STATUS_BAR: Record<Status, string> = {
 };
 
 // ── Day derivation from timeline ─────────────────────────────────────────────
-// Office hours 10:00–19:00 — mirrors backend WorkingOverlapForDay.
-const WORK_START_H = 10;
-const WORK_END_H   = 19;
+// Raw overlap — no office-hours clipping.
+function overlapSecs(start: Date, end: Date): number {
+  return end > start ? Math.floor((end.getTime() - start.getTime()) / 1000) : 0;
+}
+
+function dayOverlapSecs(segStart: Date, segEnd: Date, day: Date): number {
+  const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(day); dayEnd.setDate(dayEnd.getDate() + 1);
+  const ss = segStart > dayStart ? segStart : dayStart;
+  const ee = segEnd < dayEnd ? segEnd : dayEnd;
+  return overlapSecs(ss, ee);
+}
 
 interface DayBucket {
   date: string;           // 'YYYY-MM-DD'
@@ -39,15 +48,6 @@ interface DayBucket {
   byStatus: Record<string, number>; // status → working seconds
   total: number;
   productive: number;
-}
-
-function workingSecondsForDay(segStart: Date, segEnd: Date, day: Date): number {
-  const dayWork0 = new Date(day); dayWork0.setHours(WORK_START_H, 0, 0, 0);
-  const dayWork1 = new Date(day); dayWork1.setHours(WORK_END_H,   0, 0, 0);
-  const sliceStart = segStart > dayWork0 ? segStart : dayWork0;
-  const sliceEnd   = segEnd   < dayWork1 ? segEnd   : dayWork1;
-  if (sliceEnd <= sliceStart) return 0;
-  return Math.floor((sliceEnd.getTime() - sliceStart.getTime()) / 1000);
 }
 
 function buildDayBuckets(timeline: EffortTimelineSegment[]): DayBucket[] {
@@ -63,7 +63,7 @@ function buildDayBuckets(timeline: EffortTimelineSegment[]): DayBucket[] {
     const last   = new Date(end);   last.setHours(0, 0, 0, 0);
 
     while (cursor <= last) {
-      const ov = workingSecondsForDay(start, end, cursor);
+      const ov = dayOverlapSecs(start, end, cursor);
       if (ov > 0) {
         const key = cursor.toISOString().slice(0, 10);
         if (!map.has(key)) {
@@ -90,24 +90,30 @@ function buildDayBuckets(timeline: EffortTimelineSegment[]): DayBucket[] {
 // ── Tab: Total ───────────────────────────────────────────────────────────────
 function TotalTab({ effort }: { effort: TaskEffort }) {
   const total       = effort.totalElapsedSeconds;
-  const nonProd     = effort.pausedSeconds + effort.blockedSeconds + effort.underReviewSeconds;
+  const actualHours = effort.productiveSeconds; // All productive statuses (in-progress, paused, blocked, under-review, issues, new)
+  const estimatedHours = effort.estimatedHours ?? 0;
+  const actualHoursStr = formatSeconds(actualHours);
+  const estimatedHoursStr = estimatedHours > 0 ? `${estimatedHours}h` : '—';
+  const variance = estimatedHours > 0 ? (actualHours / 3600) - estimatedHours : 0;
+  const varianceStr = estimatedHours > 0 ? (variance >= 0 ? `+${formatSeconds(variance * 3600)}` : formatSeconds(variance * 3600)) : '';
+  const varianceColor = variance > 0 ? 'text-red-500' : variance < 0 ? 'text-emerald-500' : 'text-gray-400';
   const barSegments = effort.byStatus.filter(s => s.seconds > 0);
 
   return (
     <div className="space-y-2">
       {/* Headline totals */}
       <div className="grid grid-cols-3 gap-2">
-        <div className="p-2 bg-gray-50/50 dark:bg-gray-900/50 rounded-lg border border-gray-100/50 dark:border-gray-800/50">
-          <div className="text-[8px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Total</div>
-          <div className="text-[13px] font-black font-mono text-gray-700 dark:text-gray-200">{formatSeconds(total)}</div>
-        </div>
         <div className="p-2 bg-indigo-50/60 dark:bg-indigo-900/20 rounded-lg border border-indigo-100/50 dark:border-indigo-900/30">
-          <div className="text-[8px] font-black uppercase tracking-widest text-indigo-400 mb-0.5">Productive</div>
-          <div className="text-[13px] font-black font-mono text-indigo-600 dark:text-indigo-300">{formatSeconds(effort.productiveSeconds)}</div>
+          <div className="text-[8px] font-black uppercase tracking-widest text-indigo-400 mb-0.5">Estimate Hours</div>
+          <div className="text-[13px] font-black font-mono text-indigo-600 dark:text-indigo-300">{estimatedHoursStr}</div>
         </div>
-        <div className="p-2 bg-gray-50/50 dark:bg-gray-900/50 rounded-lg border border-gray-100/50 dark:border-gray-800/50">
-          <div className="text-[8px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Paused/Blocked/Review</div>
-          <div className="text-[13px] font-black font-mono text-amber-600 dark:text-amber-400">{formatSeconds(nonProd)}</div>
+        <div className="p-2 bg-amber-50/60 dark:bg-amber-900/20 rounded-lg border border-amber-100/50 dark:border-amber-900/30">
+          <div className="text-[8px] font-black uppercase tracking-widest text-amber-400 mb-0.5">Actual Hours</div>
+          <div className="text-[13px] font-black font-mono text-amber-600 dark:text-amber-300">{actualHoursStr}</div>
+        </div>
+        <div className={`p-2 bg-gray-50/50 dark:bg-gray-900/50 rounded-lg border border-gray-100/50 dark:border-gray-800/50 ${varianceColor}`}>
+          <div className="text-[8px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Variance</div>
+          <div className="text-[13px] font-black font-mono">{varianceStr || '—'}</div>
         </div>
       </div>
 
@@ -235,7 +241,7 @@ function DateWiseTab({ days }: { days: DayBucket[] }) {
               <div className="text-[12px] font-black font-mono text-indigo-600 dark:text-indigo-300">{formatSeconds(day.productive)}</div>
             </div>
             <div className="p-1.5 bg-gray-50/50 dark:bg-gray-900/50 rounded-lg border border-gray-100/50 dark:border-gray-800/50">
-              <div className="text-[7px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Total (office hrs)</div>
+              <div className="text-[7px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Total</div>
               <div className="text-[12px] font-black font-mono text-gray-700 dark:text-gray-200">{formatSeconds(day.total)}</div>
             </div>
           </div>
@@ -257,7 +263,7 @@ function DateWiseTab({ days }: { days: DayBucket[] }) {
           </div>
         </>
       ) : (
-        <p className="text-center text-[10px] text-gray-400 italic py-3">No office-hour effort on this day.</p>
+        <p className="text-center text-[10px] text-gray-400 italic py-3">No effort on this day.</p>
       )}
 
       {/* Sparkline strip — all days */}
