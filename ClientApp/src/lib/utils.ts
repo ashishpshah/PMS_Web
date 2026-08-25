@@ -17,14 +17,52 @@ export function isValidHoursEntry(hours: number | null | undefined): hours is nu
   return hours != null && hours > 0 && hours <= MAX_HOURS_PER_ENTRY;
 }
 
-// Mirrors backend AllowedEdges' per-edge ActualHoursExempt (Services/TaskService.cs).
-// 'blocked' is intentionally absent from every entry — that transition is never exempt and
-// is always handled via its own hours-collecting modal/form.
-export const HOURS_EXEMPT_EDGES: Partial<Record<Status, Status[]>> = {
-  'new':          ['in-progress'],
-  'in-progress':  ['paused'],
-  'under-review': ['issues'],
+// Mirrors backend AllowedEdges' per-edge config (Services/TaskService.cs).
+export interface EdgeInfo {
+  isActualHoursExempt: boolean;
+}
+
+export const ALLOWED_EDGES: Partial<Record<Status, Partial<Record<Status, EdgeInfo>>>> = {
+  'new': {
+    'in-progress': { isActualHoursExempt: true },
+  },
+  'in-progress': {
+    'paused':       { isActualHoursExempt: true },
+    'blocked':      { isActualHoursExempt: true },
+    'under-review': { isActualHoursExempt: true },
+  },
+  'paused': {
+    'in-progress': { isActualHoursExempt: false },
+  },
+  'blocked': {
+    'in-progress': { isActualHoursExempt: false },
+  },
+  'under-review': {
+    'completed': { isActualHoursExempt: true },
+    'issues':    { isActualHoursExempt: true },
+    'in-progress': { isActualHoursExempt: false },
+    'blocked':      { isActualHoursExempt: false },
+  },
+  'issues': {
+    'in-progress': { isActualHoursExempt: false },
+    'under-review': { isActualHoursExempt: false },
+    'completed': { isActualHoursExempt: false },
+    'blocked':      { isActualHoursExempt: false },
+  },
+  'completed': {
+    'in-progress': { isActualHoursExempt: false },
+  },
 };
+
+// Helper to check if a transition requires actual hours (false = mandatory hours)
+export function isActualHoursExempt(from: Status, to: Status): boolean {
+  return ALLOWED_EDGES[from]?.[to]?.isActualHoursExempt ?? false;
+}
+
+// Allowed next statuses for a given status
+export function getAllowedNextStatuses(status: Status): Status[] {
+  return Object.keys(ALLOWED_EDGES[status] ?? {}) as Status[];
+}
 
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {
