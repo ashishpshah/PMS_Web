@@ -12,7 +12,6 @@ interface ApiTemplateItemDto {
   defaultAssigneeName?: string;
   qaReviewerId?: number;
   qaReviewerName?: string;
-  dueDateOffsetDays: number;
   tags: string[];
   checklistItems: string[];
   dependsOnPositions: number[];
@@ -71,7 +70,6 @@ function mapItem(dto: ApiTemplateItemDto): TaskTemplateItem {
     defaultAssigneeName: dto.defaultAssigneeName,
     qaReviewerId: dto.qaReviewerId,
     qaReviewerName: dto.qaReviewerName,
-    dueDateOffsetDays: dto.dueDateOffsetDays,
     tags: dto.tags || [],
     checklistItems: dto.checklistItems || [],
     dependsOnPositions: dto.dependsOnPositions || [],
@@ -137,7 +135,6 @@ export interface SaveTemplateItemForm {
   priority: Priority;
   defaultAssigneeId?: number;
   qaReviewerId?: number;
-  dueDateOffsetDays: number;
   tags: string[];
   checklistItems: string[];
   dependsOnPositions: number[];

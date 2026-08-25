@@ -245,7 +245,6 @@ export interface Task {
   description: string;
   status: Status;
   priority: Priority;
-  dueDate: string | null;
   assigneeId: number;
   createdById?: number;
   createdByName?: string;
@@ -274,7 +273,6 @@ export interface Task {
   childTaskCount?: number;
   hasIssues?: boolean;
   isPaused?: boolean;
-  isOverdue?: boolean;
   pauseReason?: string;
   conditionHistory?: TaskConditionHistory[];
   issueEntries?: TaskIssueEntry[];
@@ -352,6 +350,7 @@ export interface TaskEffort {
   underReviewSeconds: number;
   otherSeconds: number;
   isRunning: boolean;
+  estimatedHours?: number;
   byStatus: StatusDuration[];
   byUser: UserEffort[];
   timeline: EffortTimelineSegment[];
@@ -682,7 +681,6 @@ export interface TaskTemplateItem {
   defaultAssigneeName?: string;
   qaReviewerId?: number;
   qaReviewerName?: string;
-  dueDateOffsetDays: number;
   tags: string[];
   checklistItems: string[];
   dependsOnPositions: number[];
