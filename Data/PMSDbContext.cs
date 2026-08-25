@@ -645,7 +645,6 @@ namespace TaskManagement.Data
         public User? AssignedTo { get; set; }
         public int CreatedById { get; set; }
         public User? CreatedBy { get; set; }
-        public DateTime? DueDate { get; set; }
         public decimal? EstimatedHours { get; set; }
         public decimal? ActualHours { get; set; }
         public int Progress { get; set; } = 0;
@@ -988,7 +987,6 @@ namespace TaskManagement.Data
         public User?    DefaultAssignee   { get; set; }
         public int?     QaReviewerId      { get; set; }
         public User?    QaReviewer        { get; set; }
-        public int      DueDateOffsetDays { get; set; }
         public ICollection<TaskTemplateItemChecklist>      Checklists      { get; set; } = new List<TaskTemplateItemChecklist>();
         public ICollection<TaskTemplateItemTag>            Tags            { get; set; } = new List<TaskTemplateItemTag>();
         public ICollection<TaskTemplateItemDependency>     Dependencies    { get; set; } = new List<TaskTemplateItemDependency>();

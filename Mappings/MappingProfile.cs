@@ -82,10 +82,7 @@ namespace TaskManagement.Mappings
                 .ForMember(dest => dest.BlockChecklistItems, opt => opt.Ignore())
                 .ForMember(dest => dest.HasIssues, opt => opt.MapFrom(src => src.HasIssues))
                 .ForMember(dest => dest.IsPaused, opt => opt.MapFrom(src => src.IsPaused))
-                .ForMember(dest => dest.PauseReason, opt => opt.MapFrom(src => src.PauseReason))
-                .ForMember(dest => dest.IsOverdue, opt => opt.MapFrom(src =>
-                    src.DueDate.HasValue && src.DueDate.Value < AppClock.Now
-                    && src.Status != "completed"));
+                .ForMember(dest => dest.PauseReason, opt => opt.MapFrom(src => src.PauseReason));
 
             CreateMap<ChecklistItem, ChecklistItemDto>()
                 .ForMember(dest => dest.CompletedByName, opt => opt.MapFrom(src => src.CompletedBy != null ? src.CompletedBy.FullName : null));

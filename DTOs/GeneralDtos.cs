@@ -127,7 +127,6 @@ namespace TaskManagement.DTOs
         public int? AssignedToId { get; set; }
         public string? AssignedToName { get; set; }
         public string? AssignedToAvatarUrl { get; set; }
-        public DateTime? DueDate { get; set; }
         public int Progress { get; set; }
         public decimal? EstimatedHours { get; set; }
         public decimal? ActualHours { get; set; }
@@ -225,6 +224,7 @@ namespace TaskManagement.DTOs
         public long UnderReviewSeconds { get; set; }
         public long OtherSeconds { get; set; }
         public bool IsRunning { get; set; }
+        public decimal? EstimatedHours { get; set; }
         public List<StatusDurationDto> ByStatus { get; set; } = new();
         public List<UserEffortDto> ByUser { get; set; } = new();
         public List<EffortTimelineSegmentDto> Timeline { get; set; } = new();
@@ -275,7 +275,6 @@ namespace TaskManagement.DTOs
         public string Priority { get; set; } = "Medium";
         public int ProjectId { get; set; }
         public int? AssignedToId { get; set; }
-        public DateTime? DueDate { get; set; }
         public string? Module { get; set; }
         public List<string>? Tags { get; set; }
         public int? ParentTaskId { get; set; }
@@ -330,20 +329,7 @@ namespace TaskManagement.DTOs
     // ── At-risk snapshot (overdue tasks + stalled projects), current-state only ──
     public class AtRiskDto
     {
-        public List<OverdueTaskDto> OverdueTasks { get; set; } = new();
         public List<StalledProjectDto> StalledProjects { get; set; } = new();
-    }
-
-    public class OverdueTaskDto
-    {
-        public int Id { get; set; }
-        public string? Code { get; set; }
-        public string Title { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
-        public DateTime DueDate { get; set; }
-        public int DaysOverdue { get; set; }
-        public int? AssignedToId { get; set; }
-        public string? AssignedToName { get; set; }
     }
 
     public class StalledProjectDto
@@ -1004,7 +990,6 @@ namespace TaskManagement.DTOs
         public string?  DefaultAssigneeName { get; set; }
         public int?     QaReviewerId        { get; set; }
         public string?  QaReviewerName      { get; set; }
-        public int      DueDateOffsetDays   { get; set; }
         public List<string> Tags              { get; set; } = new();
         public List<string> ChecklistItems    { get; set; } = new();
         public List<int>    DependsOnPositions { get; set; } = new();

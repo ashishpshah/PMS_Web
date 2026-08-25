@@ -151,9 +151,6 @@ builder.Services.AddScoped<IDatabaseInitializer, DatabaseInitializer>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IAuthorizationService, AuthorizationService>();
 
-// Working-hours configuration (default 10:00–19:00, overridable via appsettings "WorkingHours")
-builder.Services.Configure<WorkingHoursOptions>(builder.Configuration.GetSection("WorkingHours"));
-
 // Swagger Configuration
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -224,10 +221,6 @@ app.MapFallbackToFile("index.html");
 
 using (var scope = app.Services.CreateScope())
 {
-    // Apply working-hours config to the static helper before first request
-    var whOpts = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<WorkingHoursOptions>>().Value;
-    EffortHelpers.Configure(whOpts);
-
     // Database init (migrate + seed) must NOT be able to take the whole host down.
     // On shared hosting the remote SQL server can be cold/slow/unreachable at cold start;
     // if MigrateAsync/seeding throws here, an unhandled exception aborts app.Run() and every
