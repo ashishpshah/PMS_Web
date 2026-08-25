@@ -336,8 +336,8 @@ export default function ProjectDetails() {
                             try {
                               await removeMemberFromProject(project.id, m.userId);
                               showSuccess(`${m.fullName} removed from project`);
-                            } catch {
-                              showError('Failed to remove member');
+                            } catch (err) {
+                              showError(err instanceof Error ? err.message : 'Failed to remove member');
                             }
                           }}
                           className="transition-opacity text-gray-300 hover:text-red-500"
@@ -403,8 +403,8 @@ export default function ProjectDetails() {
                             await updateProjectMembers(project.id, [...currentMemberIds, ...selectedUserIds]);
                             showSuccess(`${selectedUserIds.length} member(s) added`);
                             setIsAddMembersOpen(false);
-                          } catch {
-                            showError('Failed to add members');
+                          } catch (err) {
+                            showError(err instanceof Error ? err.message : 'Failed to add members');
                           }
                         }}
                       >

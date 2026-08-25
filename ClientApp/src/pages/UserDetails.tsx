@@ -62,8 +62,8 @@ export default function UserDetails() {
         localPerms[p.pageModuleId] = p.permissions;
       });
       setLocalPermissions(localPerms);
-    } catch {
-      showError('Failed to load permissions');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to load permissions');
     } finally {
       setIsLoadingPerms(false);
     }
@@ -83,8 +83,8 @@ export default function UserDetails() {
       await permissionService.updateUserPermissions(Number(id), updates);
       showSuccess('Permissions saved successfully!');
       loadPermissions();
-    } catch {
-      showError('Failed to save permissions');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to save permissions');
     } finally {
       setIsSaving(false);
     }
@@ -97,8 +97,8 @@ export default function UserDetails() {
         await permissionService.clearUserPermissions(Number(id));
         setLocalPermissions({});
         showSuccess('User permissions cleared. Now using role-based permissions.');
-      } catch {
-        showError('Failed to clear permissions');
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to clear permissions');
       }
     });
   };

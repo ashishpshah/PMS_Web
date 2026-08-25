@@ -62,8 +62,8 @@ export default function TemplateDetail() {
       ]);
       setTemplate(t);
       setHistory(h);
-    } catch {
-      showError('Failed to load template');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to load template');
       navigate('/templates');
     } finally {
       setLoading(false);
@@ -224,9 +224,6 @@ export default function TemplateDetail() {
                           <span className={cn('text-[11px] font-bold uppercase', PRIORITY_COLORS[item.priority] ?? '')}>{item.priority}</span>
                           {item.estimatedHours > 0 && (
                             <span className="text-[11px] text-gray-400">{item.estimatedHours}h estimated</span>
-                          )}
-                          {item.dueDateOffsetDays > 0 && (
-                            <span className="text-[11px] text-gray-400">due +{item.dueDateOffsetDays}d</span>
                           )}
                         </div>
 

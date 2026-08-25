@@ -61,8 +61,8 @@ export default function Settings() {
       setProfileSaved(true);
       showSuccess('Profile updated');
       setTimeout(() => setProfileSaved(false), 2500);
-    } catch {
-      showError('Failed to update profile');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to update profile');
     } finally {
       setSavingProfile(false);
     }
@@ -98,8 +98,8 @@ export default function Settings() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    } catch {
-      setPasswordError('Current password is incorrect');
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Current password is incorrect');
     } finally {
       setSavingPassword(false);
     }
@@ -110,8 +110,8 @@ export default function Settings() {
     try {
       await userService.resetPassword(userId);
       showSuccess(`Password reset to "Az@12345" for ${userName}`);
-    } catch {
-      showError(`Failed to reset password for ${userName}`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : `Failed to reset password for ${userName}`);
     } finally {
       setResettingId(null);
     }

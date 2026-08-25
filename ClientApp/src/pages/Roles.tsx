@@ -82,61 +82,61 @@ export default function Roles() {
     }
   }, [selectedRoleId, activeTab]);
 
-   const loadRoles = async () => {
-     setIsSaving(true);
-     try {
-       const data = await roleService.getAll();
-       setRoles(data);
-       if (data.length > 0 && !selectedRoleId) {
-         setSelectedRoleId(data[0].id);
-       }
-     } catch {
-       showError('Failed to load roles');
-     } finally {
-       setIsSaving(false);
-     }
-   };
+const loadRoles = async () => {
+      setIsSaving(true);
+      try {
+        const data = await roleService.getAll();
+        setRoles(data);
+        if (data.length > 0 && !selectedRoleId) {
+          setSelectedRoleId(data[0].id);
+        }
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to load roles');
+      } finally {
+        setIsSaving(false);
+      }
+    };
 
-   const loadPageModules = async () => {
-     setIsSaving(true);
-     try {
-       const data = await permissionService.getPageModules();
-       setPageModules(data);
-       const initialStates: { [pageModuleId: number]: PermissionState } = {};
-       data.forEach(pm => {
-         initialStates[pm.id] = { view: false, create: false, update: false, delete: false };
-       });
-       setPermStates(initialStates);
-     } catch {
-       showError('Failed to load page modules');
-     } finally {
-       setIsSaving(false);
-     }
-   };
+    const loadPageModules = async () => {
+      setIsSaving(true);
+      try {
+        const data = await permissionService.getPageModules();
+        setPageModules(data);
+        const initialStates: { [pageModuleId: number]: PermissionState } = {};
+        data.forEach(pm => {
+          initialStates[pm.id] = { view: false, create: false, update: false, delete: false };
+        });
+        setPermStates(initialStates);
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to load page modules');
+      } finally {
+        setIsSaving(false);
+      }
+    };
 
-   const loadRolePermissions = async (roleId: number) => {
-     setIsSaving(true);
-     try {
-       const data = await permissionService.getRolePermissions(roleId);
-       setRolePermissions(data);
+    const loadRolePermissions = async (roleId: number) => {
+      setIsSaving(true);
+      try {
+        const data = await permissionService.getRolePermissions(roleId);
+        setRolePermissions(data);
 
-       const states: { [pageModuleId: number]: PermissionState } = {};
-       data.forEach(rp => {
-         const perms = rp.permissions;
-         states[rp.pageModuleId] = {
-           view: (perms & 1) === 1,
-           create: (perms & 2) === 2,
-           update: (perms & 4) === 4,
-           delete: (perms & 8) === 8,
-         };
-       });
-       setPermStates(states);
-     } catch {
-       showError('Failed to load role permissions');
-     } finally {
-       setIsSaving(false);
-     }
-   };
+        const states: { [pageModuleId: number]: PermissionState } = {};
+        data.forEach(rp => {
+          const perms = rp.permissions;
+          states[rp.pageModuleId] = {
+            view: (perms & 1) === 1,
+            create: (perms & 2) === 2,
+            update: (perms & 4) === 4,
+            delete: (perms & 8) === 8,
+          };
+        });
+        setPermStates(states);
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to load role permissions');
+      } finally {
+        setIsSaving(false);
+      }
+    };
 
   const handlePermissionChange = (pageModuleId: number, key: keyof PermissionState | 'noAccess' | 'fullAccess', checked: boolean) => {
     setPermStates(prev => {
@@ -186,22 +186,22 @@ export default function Roles() {
     return val;
   };
 
-   const handleSavePermissions = async () => {
-     if (!selectedRoleId) return;
-     setIsSaving(true);
-     try {
-       const updates: PermissionUpdate[] = pageModules.map(pm => ({
-         pageModuleId: pm.id,
-         permissions: getPermissionValue(pm.id),
-       }));
-       await permissionService.updateRolePermissions(selectedRoleId, updates);
-       showSuccess('Permissions saved successfully!');
-     } catch {
-       showError('Failed to save permissions');
-     } finally {
-       setIsSaving(false);
-     }
-   };
+const handleSavePermissions = async () => {
+      if (!selectedRoleId) return;
+      setIsSaving(true);
+      try {
+        const updates: PermissionUpdate[] = pageModules.map(pm => ({
+          pageModuleId: pm.id,
+          permissions: getPermissionValue(pm.id),
+        }));
+        await permissionService.updateRolePermissions(selectedRoleId, updates);
+        showSuccess('Permissions saved successfully!');
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to save permissions');
+      } finally {
+        setIsSaving(false);
+      }
+    };
 
   const updatePermission = (pageModuleId: number, permissions: number) => {
     setRolePermissions(prev => 
@@ -232,8 +232,8 @@ export default function Roles() {
         await roleService.delete(id);
         showSuccess('Role deleted');
         loadRoles();
-      } catch {
-        showError('Failed to delete role');
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to delete role');
       }
     });
   };

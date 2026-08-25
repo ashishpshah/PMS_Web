@@ -613,32 +613,12 @@ export default function Dashboard() {
     );
   }
 
-  const taskIsOverdue = (t: Task) =>
-    !!t.dueDate && new Date(t.dueDate).getTime() < Date.now() && t.status !== 'completed';
-
   // "My Work" lists always reflect the logged-in user, independent of the
   // admin's shared filter selection. Both fetches are already sorted by the
   // backend (CreatedAt desc), so no client-side re-sort is needed here. Shows
   // only the top/latest 10 — no pagination on this card.
   const assignedToMe = myAssignedTasks.slice(0, 10);
   const createdByMe = myCreatedTasks.slice(0, 10);
-  const myMerged = (() => {
-    const map = new Map<number, Task>();
-    for (const t of myAssignedTasks) map.set(t.id, t);
-    for (const t of myCreatedTasks) map.set(t.id, t);
-    return Array.from(map.values());
-  })();
-  // Overdue-first, soonest-due-next — top 10 only, no pagination on this card.
-  const myDeadlines = currentUser
-    ? myMerged
-        .filter(t => t.status !== 'completed' && !!t.dueDate)
-        .sort((a, b) => {
-          const ao = taskIsOverdue(a), bo = taskIsOverdue(b);
-          if (ao !== bo) return ao ? -1 : 1;            // overdue group first
-          return new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime(); // then soonest due
-        })
-        .slice(0, 10)
-    : [];
 
   // Stat cards + blocked-count derive from dashboardStats (already accurately
   // role/date scoped server-side) rather than the capped task-row fetches above.
@@ -1293,7 +1273,6 @@ export default function Dashboard() {
         {(() => {
           const renderRow = (task: Task) => {
             const assignee = users.find(u => u.id === task.assigneeId);
-            const daysLeft = task.dueDate ? Math.ceil((new Date(task.dueDate).getTime() - Date.now()) / 86400000) : null;
             return (
               <div key={task.id} className="flex items-start justify-between gap-2 py-1.5 border-b border-gray-50 dark:border-gray-900 last:border-0">
                 <div className="flex-1 min-w-0">
@@ -1316,9 +1295,7 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
-                {daysLeft != null && taskIsOverdue(task)
-                  ? <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold whitespace-nowrap shrink-0 mt-0.5 bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">{Math.abs(daysLeft)}d overdue</span>
-                  : <span className="text-[10px] font-mono text-gray-400 whitespace-nowrap shrink-0 mt-0.5 flex items-center gap-1"><Clock size={9} className="opacity-60" />{task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}</span>}
+                <span className="text-[10px] font-mono text-gray-400 whitespace-nowrap shrink-0 mt-0.5 flex items-center gap-1"><Clock size={9} className="opacity-60" />{task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}</span>
               </div>
             );
           };
@@ -1347,82 +1324,10 @@ export default function Dashboard() {
             );
           };
 
-          // Deadlines box (overdue first, then upcoming) — shown right of "Assigned to Me"
-          const hasOverdue = myDeadlines.some(taskIsOverdue);
-          const deadlinesBox = (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <ClipboardCheck size={16} className={hasOverdue ? 'text-red-500' : 'text-indigo-500'} />
-                  <h3 className="text-sm font-black uppercase tracking-tight text-gray-900 dark:text-white">Overdue &amp; Upcoming Deadlines</h3>
-                  {hasOverdue && (
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">
-                      {myDeadlines.filter(taskIsOverdue).length} overdue
-                    </span>
-                  )}
-                </div>
-                <Link to={`/tasks?mine=1&due=${hasOverdue ? 'overdue' : 'upcoming'}`} className="text-xs text-indigo-600 font-semibold hover:underline">View all →</Link>
-              </div>
-              <Card>
-                <CardContent className="p-4 space-y-2">
-                  {myDeadlines.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-4">No upcoming or overdue deadlines</p>
-                  ) : (
-                    myDeadlines.map((task, idx) => {
-                      const assignee = users.find(u => u.id === task.assigneeId);
-                      const daysLeft = Math.ceil((new Date(task.dueDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                      const urgency = daysLeft < 0 ? 'overdue' : daysLeft === 0 ? 'today' : daysLeft <= 2 ? 'soon' : 'normal';
-                      const prevOverdue = idx > 0 && taskIsOverdue(myDeadlines[idx - 1]);
-                      const showUpcomingDivider = !taskIsOverdue(task) && (idx === 0 || prevOverdue);
-                      return (
-                        <React.Fragment key={task.id}>
-                          {showUpcomingDivider && idx > 0 && (
-                            <div className="pt-1 text-[9px] font-black uppercase tracking-widest text-gray-400">Upcoming</div>
-                          )}
-                          <div className="flex items-start justify-between gap-2 py-1.5 border-b border-gray-50 dark:border-gray-900 last:border-0">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <InteractiveLink type="task" id={task.id} className="text-[13px] font-semibold text-gray-700 dark:text-gray-300 hover:text-indigo-600 truncate">
-                                  {task.title}
-                                </InteractiveLink>
-                                {task.isBlocked && <ShieldAlert size={11} className="text-red-500 shrink-0" />}
-                              </div>
-                              {assignee && (
-                                <InteractiveLink type="user" id={assignee.id} className="flex items-center gap-1 mt-0.5 w-fit hover:opacity-80 transition-opacity">
-                                  <img
-                                    src={assignee.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(assignee.name)}&background=random&size=20`}
-                                    alt={assignee.name}
-                                    className="h-3.5 w-3.5 rounded-full object-cover border border-indigo-200 dark:border-indigo-800"
-                                  />
-                                  <span className="text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 truncate max-w-[80px]">{assignee.name}</span>
-                                </InteractiveLink>
-                              )}
-                            </div>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold whitespace-nowrap shrink-0 mt-0.5 ${
-                              urgency === 'overdue' ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
-                              urgency === 'today'   ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
-                              urgency === 'soon'    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' :
-                                                      'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                            }`}>
-                              {urgency === 'overdue' ? `${Math.abs(daysLeft)}d overdue` : urgency === 'today' ? 'Today' : `In ${daysLeft}d`}
-                            </span>
-                          </div>
-                        </React.Fragment>
-                      );
-                    })
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          );
 
           return (
             <div className="space-y-4">
-              {/* Assigned to Me | Overdue & Upcoming Deadlines */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                {simpleBox('Assigned to Me', UserCheck, assignedToMe, 'No tasks assigned to you', '/tasks?mine=1')}
-                {deadlinesBox}
-              </div>
+              {simpleBox('Assigned to Me', UserCheck, assignedToMe, 'No tasks assigned to you', '/tasks?mine=1')}
               {/* Created by Me (only if any) */}
               {createdByMe.length > 0 && simpleBox('Created by Me', ClipboardCheck, createdByMe, 'You have not created any tasks', '/tasks?createdByMe=1')}
             </div>
@@ -1462,9 +1367,6 @@ export default function Dashboard() {
                     const checkTotal = task.checklistItems?.length ?? 0;
                     const checkDone  = task.checklistItems?.filter(c => c.isCompleted).length ?? 0;
                     const progress   = task.progress ?? (checkTotal > 0 ? Math.round((checkDone / checkTotal) * 100) : 0);
-
-                    const daysLeft = Math.ceil((new Date(task.dueDate).getTime() - Date.now()) / 86400000);
-                    const isOverdue = daysLeft < 0 && task.status !== 'completed';
 
                     const priorityDot =
                       task.priority === 'critical' ? 'bg-rose-600' :
@@ -1565,18 +1467,11 @@ export default function Dashboard() {
                             )}
                           </div>
 
-                          {/* Overdue / due-today urgency, else Estimate Hours */}
-                          {isOverdue || daysLeft === 0 ? (
-                            <span className={`text-[10px] font-mono font-semibold flex items-center gap-1 ${isOverdue ? 'text-red-500' : 'text-amber-500'}`}>
-                              <Calendar size={9} className="opacity-60" />
-                              {isOverdue ? `${Math.abs(daysLeft)}d overdue` : 'Due today'}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-mono font-semibold flex items-center gap-1 text-gray-400">
-                              <Clock size={9} className="opacity-60" />
-                              {task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}
-                            </span>
-                          )}
+                          {/* Estimate Hours */}
+                          <span className="text-[10px] font-mono font-semibold flex items-center gap-1 text-gray-400">
+                            <Clock size={9} className="opacity-60" />
+                            {task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}
+                          </span>
                         </div>
                       </div>
                     );
@@ -1680,8 +1575,8 @@ export default function Dashboard() {
               try {
                 await reassignTask(reassigningTask.id, newUserId, reasonTag);
                 showSuccess('Task reassigned successfully');
-              } catch {
-                showError('Failed to reassign task');
+              } catch (err) {
+                showError(err instanceof Error ? err.message : 'Failed to reassign task');
               }
               setReassigningTaskId(null);
             }}

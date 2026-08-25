@@ -47,8 +47,8 @@ export default function TemplateList() {
     try {
       setLoading(true);
       setTemplates(await templateService.getAll());
-    } catch {
-      showError('Failed to load templates');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to load templates');
     } finally {
       setLoading(false);
     }
@@ -61,8 +61,8 @@ export default function TemplateList() {
       await templateService.setActive(t.id, !t.isActive);
       setTemplates(prev => prev.map(x => x.id === t.id ? { ...x, isActive: !x.isActive } : x));
       showSuccess(`Template ${t.isActive ? 'deactivated' : 'activated'}`);
-    } catch {
-      showError('Failed to update template status');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to update template status');
     }
   };
 
@@ -71,8 +71,8 @@ export default function TemplateList() {
       const copy = await templateService.duplicate(t.id);
       setTemplates(prev => [copy, ...prev]);
       showSuccess('Template duplicated');
-    } catch {
-      showError('Failed to duplicate template');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to duplicate template');
     }
   };
 
@@ -82,8 +82,8 @@ export default function TemplateList() {
         await templateService.delete(t.id);
         setTemplates(prev => prev.filter(x => x.id !== t.id));
         showSuccess('Template deleted');
-      } catch {
-        showError('Failed to delete template');
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to delete template');
       }
     });
   };

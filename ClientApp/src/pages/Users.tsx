@@ -201,8 +201,8 @@ export default function Users() {
         try {
           await deleteUser(user.id);
           showSuccess(`${user.name} has been deleted.`);
-        } catch {
-          showError('Failed to delete user.');
+        } catch (err) {
+          showError(err instanceof Error ? err.message : 'Failed to delete user.');
         }
       }
     );
@@ -217,8 +217,8 @@ export default function Users() {
         try {
           await setUserActive(user.id, isActive);
           showSuccess(isActive ? `${user.name} has been activated.` : `${user.name} has been deactivated.`);
-        } catch {
-          showError('Failed to update user status.');
+        } catch (err) {
+          showError(err instanceof Error ? err.message : 'Failed to update user status.');
         }
       }
     );
@@ -231,8 +231,8 @@ export default function Users() {
         try {
           await reactivateUser(user.id);
           showSuccess(`${user.name} has been reactivated.`);
-        } catch {
-          showError('Failed to reactivate user.');
+        } catch (err) {
+          showError(err instanceof Error ? err.message : 'Failed to reactivate user.');
         }
       }
     );

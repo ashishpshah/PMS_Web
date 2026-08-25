@@ -12,7 +12,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Task, Status, Priority, Attachment, STATUS_LABELS, STATUS_BADGE_VARIANT, TASK_STATUSES, ReasonTag, REASON_TAGS, BLOCK_REASON_TAGS, AddBlockItem, BLOCK_CATEGORIES } from '../types';
-import { cn, formatDateTime, toInputDate, toHHMM, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, HOURS_EXEMPT_EDGES } from '../lib/utils';
+import { cn, formatDateTime, toInputDate, toHHMM, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, isActualHoursExempt, getAllowedNextStatuses } from '../lib/utils';
 import { TaskAttachmentsPanel } from '../components/ui/TaskAttachmentsPanel';
 import { DateInput } from '../components/ui/DateInput';
 import { TimeInput } from '../components/ui/TimeInput';
@@ -36,9 +36,6 @@ const PRIORITY_OPTIONS: SelectOption[] = [
   { value: 'high',     label: 'High' },
   { value: 'critical', label: 'Critical' },
 ];
-
-// Hoisted so the per-row status VSelect in the table doesn't reallocate this array on every render.
-const STATUS_OPTIONS: SelectOption[] = TASK_STATUSES.map((s): SelectOption => ({ value: s, label: STATUS_LABELS[s] }));
 
 // ─── highlight helper (from Kanban) ──────────────────────────────────────────
 function highlightText(text: string, query: string): React.ReactNode {
@@ -65,17 +62,6 @@ const COLUMNS: { title: string; status: Status; dot: string }[] = [
   { title: 'Issues',       status: 'issues',        dot: 'bg-orange-500'  },
   { title: 'Completed',    status: 'completed',     dot: 'bg-emerald-500' },
 ];
-
-// Next-stage advance for the quick "+" button on each card
-const NEXT_STAGE: Record<Status, Status | null> = {
-  'new':          'in-progress',
-  'in-progress':  'under-review',
-  'paused':       'in-progress',
-  'blocked':      'in-progress',
-  'under-review': 'completed',
-  'issues':       'in-progress',
-  'completed':    null,
-};
 
 // ── Status colour maps ────────────────────────────────────────────────────────
 const STATUS_DOT: Record<string, string> = {
@@ -158,12 +144,15 @@ function TaskCompletionModal({ task, onClose }: TaskCompletionModalProps) {
   const pct = task.progress ?? 0;
 
   // ── Date-wise effort (derived from timeline) ──────────────────────────────
-  const WORK_START = 10, WORK_END = 19;
-  function workingSecsForDay(s: Date, e: Date, day: Date) {
-    const d0 = new Date(day); d0.setHours(WORK_START, 0, 0, 0);
-    const d1 = new Date(day); d1.setHours(WORK_END,   0, 0, 0);
+  // Raw overlap — no office-hours clipping.
+  function overlapSecs(s: Date, e: Date) {
+    return e > s ? Math.floor((e.getTime() - s.getTime()) / 1000) : 0;
+  }
+  function dayOverlapSecs(s: Date, e: Date, day: Date) {
+    const d0 = new Date(day); d0.setHours(0, 0, 0, 0);
+    const d1 = new Date(day); d1.setDate(d1.getDate() + 1);
     const ss = s > d0 ? s : d0, ee = e < d1 ? e : d1;
-    return ee > ss ? Math.floor((ee.getTime() - ss.getTime()) / 1000) : 0;
+    return overlapSecs(ss, ee);
   }
   interface DayBucket { date: string; label: string; byStatus: Record<string, number>; total: number; productive: number; }
   const dayBuckets: DayBucket[] = useMemo(() => {
@@ -175,7 +164,7 @@ function TaskCompletionModal({ task, onClose }: TaskCompletionModalProps) {
       const cur = new Date(s); cur.setHours(0, 0, 0, 0);
       const last = new Date(e); last.setHours(0, 0, 0, 0);
       while (cur <= last) {
-        const ov = workingSecsForDay(s, e, cur);
+        const ov = dayOverlapSecs(s, e, cur);
         if (ov > 0) {
           const key = cur.toISOString().slice(0, 10);
           if (!map.has(key)) map.set(key, { date: key, label: cur.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }), byStatus: {}, total: 0, productive: 0 });
@@ -417,7 +406,6 @@ export default function Tasks() {
   const [tagInput, setTagInput]           = useState('');
   const [newTaskChecklist, setNewTaskChecklist] = useState<string[]>([]);
   const [newChecklistInput, setNewChecklistInput] = useState('');
-  const [modalDueDate, setModalDueDate]   = useState('');
   const [modalEstHours, setModalEstHours] = useState('');
   const [modalParentTaskId, setModalParentTaskId] = useState<number | ''>('');
   const [modalProjectId, setModalProjectId] = useState<number | ''>('');
@@ -474,7 +462,6 @@ export default function Tasks() {
   const [showBlockedOnly, setShowBlockedOnly]   = useState(false);
   const [showHasIssues, setShowHasIssues]       = useState(false);
   const [showCreatedByMe, setShowCreatedByMe]   = useState(false);
-  const [dueFilter, setDueFilter]               = useState<'all' | 'has-due' | 'overdue' | 'upcoming'>('all');
 
   // ── local pagination ──────────────────────────────────────────────────────
   const [localPage, setLocalPage]       = useState(1);
@@ -517,7 +504,6 @@ export default function Tasks() {
       setEditingTask(null);
       setModalParentTaskId(parentId);
       setModalProjectId(parent.projectId);
-      setModalDueDate(new Date().toISOString().split('T')[0]);
       setModalEstHours('01:00');
       setIsModalOpen(true);
       const next = new URLSearchParams(searchParams);
@@ -555,7 +541,6 @@ export default function Tasks() {
     if (mine === '1' && currentUser) setSelectedUserIds([currentUser.id]);
     if (userId) { const n = Number(userId); if (!Number.isNaN(n)) setSelectedUserIds([n]); }
     if (createdByMe === '1') setShowCreatedByMe(true);
-    if (due === 'overdue' || due === 'upcoming') setDueFilter(due);
     if (blocked === '1') setShowBlockedOnly(true);
 
     // Clean the filter params from the URL (state now drives the UI)
@@ -597,7 +582,7 @@ export default function Tasks() {
   useEffect(() => {
     setLocalPage(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, showBlockedOnly, showHasIssues, showCreatedByMe, dueFilter, selectedOwnerIds, pagedTasks]);
+  }, [searchQuery, showBlockedOnly, showHasIssues, showCreatedByMe, selectedOwnerIds, pagedTasks]);
 
   // ── helpers ───────────────────────────────────────────────────────────────
   const getProjectName  = (id: number) => projects.find(p => p.id === id)?.name || 'Project';
@@ -661,7 +646,6 @@ export default function Tasks() {
     setShowBlockedOnly(false);
     setShowHasIssues(false);
     setShowCreatedByMe(false);
-    setDueFilter('all');
     setProjectDropdownOpen(false);
     setUserDropdownOpen(false);
     setOwnerDropdownOpen(false);
@@ -669,7 +653,7 @@ export default function Tasks() {
     setLocalPage(1);
   };
 
-  const hasActiveFilters = !!(searchQuery || selectedProjectId !== null || selectedUserIds.length > 0 || selectedOwnerIds.length > 0 || showBlockedOnly || showHasIssues || showCreatedByMe || dueFilter !== 'all');
+  const hasActiveFilters = !!(searchQuery || selectedProjectId !== null || selectedUserIds.length > 0 || selectedOwnerIds.length > 0 || showBlockedOnly || showHasIssues || showCreatedByMe);
 
   const selectedProjectLabel = selectedProjectId === null
     ? 'All Projects'
@@ -739,7 +723,6 @@ export default function Tasks() {
       setAttachments(task.attachments || []);
       setSelectedAssignee(String(task.assigneeId));
       setTaskTags(task.tags || []);
-      setModalDueDate(toInputDate(task.dueDate) || new Date().toISOString().split('T')[0]);
       setModalEstHours(toHHMM(task.estimatedHours));
       setModalQaAssigneeId(task.qaAssigneeId ?? '');
       setModalProjectId(task.projectId);
@@ -750,7 +733,6 @@ export default function Tasks() {
       setAttachments([]);
       setSelectedAssignee('');
       setTaskTags([]);
-      setModalDueDate(new Date().toISOString().split('T')[0]);
       setModalEstHours('');
       setModalQaAssigneeId('');
       setModalModule('');
@@ -839,9 +821,8 @@ export default function Tasks() {
       title:          formData.get('title') as string,
       description:    formData.get('description') as string,
       status:         editingTask?.status || 'new',
-      // Defaults when null/empty: Priority→medium, Due Date→today, Est→1h, Act→0h
+      // Defaults when null/empty: Priority→medium, Est→1h, Act→0h
       priority:       (formData.get('priority') as Priority) || 'medium',
-      dueDate:        (formData.get('dueDate') as string) || new Date().toISOString().split('T')[0],
       assigneeId:     newAssigneeIdNum,
       createdAt:      editingTask?.createdAt || new Date().toISOString().split('T')[0],
       attachments,
@@ -869,16 +850,15 @@ export default function Tasks() {
       setEditingTask(null);
       setModalParentTaskId('');
       setModalProjectId('');
-    } catch {
-      showError('Failed to save task');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to save task');
     }
   };
 
 
   // ── move task to next stage (from Kanban) ─────────────────────────────────
-  // HOURS_EXEMPT_EDGES (shared with TaskStatusActions.tsx) mirrors backend AllowedEdges' per-edge
-  // ActualHoursExempt (Services/TaskService.cs). 'blocked' is intentionally absent — that
-  // transition is never exempt and is handled via its own modal below, which also collects hours.
+  // Uses isActualHoursExempt (mirrors backend AllowedEdges' per-edge ActualHoursExempt).
+  // 'blocked' is intentionally never exempt and is handled via its own modal below.
   // Returns whether the move succeeded, so callers (e.g. the pending-hours modal) know
   // whether it's safe to close/reset their own state, instead of always doing so.
   const commitMove = async (task: Task, newStatus: Status, actualHours?: number): Promise<boolean> => {
@@ -904,7 +884,7 @@ export default function Tasks() {
       return;
     }
     // Hours-required transitions — open masked hours-spent modal instead of window.prompt
-    const exempt = HOURS_EXEMPT_EDGES[task.status]?.includes(newStatus) ?? false;
+    const exempt = isActualHoursExempt(task.status, newStatus);
     if (!exempt) {
       setPendingHoursMove({ task, status: newStatus });
       return;
@@ -943,14 +923,6 @@ export default function Tasks() {
       if (showBlockedOnly && !task.isBlocked) return false;
       if (showHasIssues && !task.hasIssues) return false;
       if (showCreatedByMe && task.createdById !== currentUser?.id) return false;
-      if (dueFilter !== 'all') {
-        const hasDue   = !!task.dueDate;
-        const overdue  = hasDue && new Date(task.dueDate!).getTime() < now && task.status !== 'completed';
-        const upcoming = hasDue && new Date(task.dueDate!).getTime() >= now && task.status !== 'completed';
-        if (dueFilter === 'has-due'  && !hasDue)   return false;
-        if (dueFilter === 'overdue'  && !overdue)  return false;
-        if (dueFilter === 'upcoming' && !upcoming) return false;
-      }
       if (q) {
         const assigneeName = getAssigneeName(task.assigneeId).toLowerCase();
         const projectName  = getProjectName(task.projectId).toLowerCase();
@@ -970,7 +942,7 @@ export default function Tasks() {
       }
       return true;
     });
-  }, [pagedTasks, searchQuery, selectedProjectId, selectedUserIds, selectedOwnerIds, showBlockedOnly, showHasIssues, showCreatedByMe, dueFilter, currentUser?.id, projects]);
+  }, [pagedTasks, searchQuery, selectedProjectId, selectedUserIds, selectedOwnerIds, showBlockedOnly, showHasIssues, showCreatedByMe, currentUser?.id, projects]);
 
   // Recency = last updated, falling back to created time
   const recency = (t: Task) => new Date(t.updatedAt || t.createdAt || 0).getTime();
@@ -986,8 +958,8 @@ export default function Tasks() {
       cmp = order[a.priority] - order[b.priority];
     } else if (sortField === 'createdAt') {
       cmp = new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
-    } else if (sortField === 'dueDate' || sortField === 'title') {
-      cmp = ((a[sortField] as string) || '').toLowerCase().localeCompare(((b[sortField] as string) || '').toLowerCase());
+    } else if (sortField === 'title') {
+      cmp = ((a.title as string) || '').toLowerCase().localeCompare(((b.title as string) || '').toLowerCase());
     }
     return sortOrder === 'asc' ? cmp : -cmp;
   }), [filteredTasks, sortField, sortOrder]);
@@ -1215,48 +1187,6 @@ export default function Tasks() {
                 )}
               </div>
 
-              {/* Due date filter dropdown */}
-              <div className="relative">
-                <button type="button" ref={dueFilterBtnRef}
-                  onClick={() => {
-                    const r = dueFilterBtnRef.current?.getBoundingClientRect();
-                    if (r) setDueDropdownPos({ top: r.bottom + 4, left: r.left });
-                    setDueDropdownOpen(o => !o);
-                    setProjectDropdownOpen(false); setUserDropdownOpen(false); setOwnerDropdownOpen(false);
-                  }}
-                  className={cn("flex items-center gap-1.5 py-1.5 pl-3 pr-2.5 rounded-md text-[12px] font-medium border transition-all select-none",
-                    dueFilter === 'overdue'  ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50 text-red-600 dark:text-red-400" :
-                    dueFilter === 'upcoming' ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50 text-amber-600 dark:text-amber-400" :
-                    dueFilter === 'has-due'  ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 text-indigo-700 dark:text-indigo-300" :
-                    "bg-gray-50 dark:bg-gray-900 border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100"
-                  )}>
-                  <Calendar size={13} />
-                  <span>{dueFilter === 'overdue' ? 'Overdue' : dueFilter === 'upcoming' ? 'Upcoming' : dueFilter === 'has-due' ? 'Has Due Date' : 'Due Date'}</span>
-                  <ChevronDownIcon size={12} className={cn("transition-transform", dueDropdownOpen && "rotate-180")} />
-                </button>
-                {dueDropdownOpen && dueDropdownPos && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setDueDropdownOpen(false)} />
-                    <div className="fixed z-50 w-44 bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-800 p-1" style={{ top: dueDropdownPos.top, left: dueDropdownPos.left }}>
-                      {([
-                        ['all', 'All', 'text-gray-600'],
-                        ['has-due', 'Has Due Date', 'text-indigo-600'],
-                        ['overdue', 'Overdue', 'text-red-600'],
-                        ['upcoming', 'Upcoming', 'text-amber-600'],
-                      ] as const).map(([val, label, cls]) => (
-                        <button key={val} onClick={() => { setDueFilter(val); setDueDropdownOpen(false); setLocalPage(1); }}
-                          className={cn("w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] transition-colors",
-                            dueFilter === val ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300" : `${cls} dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800`
-                          )}>
-                          <span className="flex-1 text-left">{label}</span>
-                          {dueFilter === val && <Check size={12} />}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
               {/* Blocked toggle */}
               <button onClick={() => { setShowBlockedOnly(v => !v); setLocalPage(1); }}
                 className={cn("flex items-center gap-1.5 py-1.5 px-2.5 rounded-md text-[12px] font-medium border transition-all",
@@ -1381,9 +1311,7 @@ export default function Tasks() {
                         const canDrag = (isAdmin || !task.isBlocked)
                           && (currentUser?.id === task.createdById
                             || currentUser?.id === task.assigneeId);
-                        const isOverdue = !!task.dueDate && new Date(task.dueDate).getTime() < Date.now()
-                          && task.status !== 'completed';
-                        const flagRed = task.isBlocked || isOverdue;
+                        const flagRed = task.isBlocked;
                         return (
                         <Card
                           key={task.id}
@@ -1421,7 +1349,7 @@ export default function Tasks() {
                               {(canEditTask(task) || canDeleteTaskItem(task)) && (
                                 <div className="flex transition-opacity gap-0.5">
                                   {canEditTask(task) && <button onClick={() => handleOpenModal(task)} className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors" title="Edit"><Edit2 size={11} /></button>}
-                                  {canDeleteTaskItem(task) && <button onClick={() => confirmAlert('Delete this task?', async () => { try { await deleteTask(task.id); showSuccess('Task deleted'); refreshTasks(); } catch { showError('Failed to delete task'); } })} className="p-0.5 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={11} /></button>}
+                                  {canDeleteTaskItem(task) && <button onClick={() => confirmAlert('Delete this task?', async () => { try { await deleteTask(task.id); showSuccess('Task deleted'); refreshTasks(); } catch (err) { showError(err instanceof Error ? err.message : 'Failed to delete task'); } })} className="p-0.5 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><Trash2 size={11} /></button>}
                                 </div>
                               )}
                             </div>
@@ -1519,11 +1447,8 @@ export default function Tasks() {
                                   <span className="text-[9px] font-bold whitespace-nowrap">
                                     {task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}
                                   </span>
-                                  {(task.isOverdue ?? (!!task.dueDate && new Date(task.dueDate).getTime() < Date.now() && task.status !== 'completed')) && (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/50 rounded text-[8px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">
-                                      ⚠ Overdue
-                                    </span>
-                                  )}
+                                  {/* Overdue badge removed - no due date */}
+                                  <span />
                                 </div>
                                 {/* Comments + subtasks inline with due row */}
                                 <div className="flex items-center gap-1.5">
@@ -1553,19 +1478,6 @@ export default function Tasks() {
                                   </div>
                                 ) : <span />}
                                 <div className="flex items-center gap-1.5">
-                                  {/* Move to next stage */}
-                                  {NEXT_STAGE[col.status] && (
-                                    <button
-                                      onClick={() => {
-                                        const next = NEXT_STAGE[col.status];
-                                        if (next) moveTask(task, next);
-                                      }}
-                                      className="h-5 w-5 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex items-center justify-center text-gray-400 hover:text-indigo-600 transition-all opacity-0 group-hover:opacity-100"
-                                      title="Move to next stage"
-                                    >
-                                      <Plus size={10} />
-                                    </button>
-                                  )}
                                   {/* Reassign */}
                                   <button
                                     onClick={() => { setReassigningTask(task); setNewAssigneeId(task.assigneeId ?? 0); }}
@@ -1578,7 +1490,7 @@ export default function Tasks() {
                                   <button
                                     onClick={() => setStatusMenuTaskId(task.id)}
                                     className="h-5 w-5 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex items-center justify-center text-gray-400 hover:text-indigo-600 transition-all opacity-0 group-hover:opacity-100"
-                                    title="Change status (guided)"
+                                    title="Change status"
                                   >
                                     <MoreHorizontal size={10} />
                                   </button>
@@ -1652,8 +1564,7 @@ export default function Tasks() {
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
                   {displayTasks.map(task => {
-                    const isOverdue = !!task.dueDate && new Date(task.dueDate).getTime() < Date.now() && task.status !== 'completed';
-                    const flagRed = task.isBlocked || isOverdue;
+                    const flagRed = task.isBlocked;
                     return (
                     <tr key={task.id} className={cn(
                       "transition-colors group",
@@ -1751,18 +1662,12 @@ export default function Tasks() {
                         <div className="flex flex-wrap items-center gap-1">
                           <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                             <div className={cn("h-1.5 w-1.5 rounded-full shrink-0", STATUS_DOT[task.status])} />
-                            <VSelect
-                              options={STATUS_OPTIONS}
-                              value={{ value: task.status, label: STATUS_LABELS[task.status] }}
-                              onChange={opt => opt && moveTask(task, opt.value as Status)}
-                              isSearchable={false}
-                              size="sm"
-                              className="w-32" />
+                            <span className="text-[11px] font-medium text-gray-700 dark:text-gray-300 capitalize">{STATUS_LABELS[task.status] ?? task.status}</span>
                             <button
                               type="button"
                               onClick={() => setStatusMenuTaskId(task.id)}
                               className="h-6 w-6 shrink-0 flex items-center justify-center rounded border border-gray-100 dark:border-gray-700 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-all"
-                              title="Change status (guided)"
+                              title="Change status"
                             >
                               <MoreHorizontal size={12} />
                             </button>
@@ -1790,7 +1695,7 @@ export default function Tasks() {
                             value={PRIORITY_OPTIONS.find(o => o.value === task.priority) ?? null}
                             onChange={async opt => {
                               if (!opt) return;
-                              try { await updateTask({ ...task, priority: opt.value as Priority }); refreshTasks(); } catch { showError('Failed to update priority'); }
+                              try { await updateTask({ ...task, priority: opt.value as Priority }); refreshTasks(); } catch (err) { showError(err instanceof Error ? err.message : 'Failed to update priority'); }
                             }}
                             isSearchable={false}
                             size="sm"
@@ -1803,7 +1708,7 @@ export default function Tasks() {
                         </div>
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <span className={cn("text-[11px] font-mono font-bold", isOverdue ? "text-rose-600 dark:text-rose-400" : "text-gray-500")}>
+                        <span className="text-[11px] font-mono font-bold text-gray-500">
                           {task.estimatedHours != null ? toHHMM(task.estimatedHours) : <span className="text-gray-200">—</span>}
                         </span>
                       </td>
@@ -1831,7 +1736,7 @@ export default function Tasks() {
                         {(canEditTask(task) || canDeleteTaskItem(task)) && (
                           <div className="inline-flex space-x-0.5 transition-opacity">
                             {canEditTask(task) && <button onClick={() => handleOpenModal(task)} className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-gray-800 rounded border border-transparent hover:border-gray-100 transition-all"><Edit2 size={13} /></button>}
-                            {canDeleteTaskItem(task) && <button onClick={() => confirmAlert('Delete this task?', async () => { try { await deleteTask(task.id); showSuccess('Task deleted'); refreshTasks(); } catch { showError('Failed to delete task'); } })} className="p-1 text-gray-400 hover:text-red-600 hover:bg-white dark:hover:bg-gray-800 rounded border border-transparent hover:border-gray-100 transition-all"><Trash2 size={13} /></button>}
+                            {canDeleteTaskItem(task) && <button onClick={() => confirmAlert('Delete this task?', async () => { try { await deleteTask(task.id); showSuccess('Task deleted'); refreshTasks(); } catch (err) { showError(err instanceof Error ? err.message : 'Failed to delete task'); } })} className="p-1 text-gray-400 hover:text-red-600 hover:bg-white dark:hover:bg-gray-800 rounded border border-transparent hover:border-gray-100 transition-all"><Trash2 size={13} /></button>}
                           </div>
                         )}
                       </td>
@@ -2003,7 +1908,6 @@ export default function Tasks() {
                               { label: 'Module',      value: live.module ?? '—' },
                               { label: 'Assignee',    value: assignee ? `${assignee.name} · ${assignee.role}` : '—' },
                               { label: 'QA Reviewer', value: qaUser ? `${qaUser.name} · ${qaUser.role}` : 'None' },
-                              { label: 'Due Date',    value: live.dueDate ? formatDateTime(live.dueDate) : '—' },
                               { label: 'Est. Hours',  value: live.estimatedHours ? toHHMM(live.estimatedHours) : '—' },
                               { label: 'Act. Hours',  value: live.actualHours ? toHHMM(live.actualHours) : '—' },
                               { label: 'Created',     value: live.createdAt ? formatDateTime(live.createdAt) : '—' },
@@ -2376,35 +2280,8 @@ export default function Tasks() {
                         </div>
                         <div className="grid grid-cols-3 gap-4">
                           <div>
-                            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Due Date</label>
-                            <DateInput name="dueDate" value={modalDueDate} onChange={setModalDueDate} className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px] font-bold" />
-                          </div>
-                          <div>
                             <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Est. Hrs <span className="text-red-500">*</span></label>
                             <TimeInput name="estimatedHours" value={modalEstHours} onChange={setModalEstHours} className="px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px] font-bold" />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Deadline</label>
-                            {(() => {
-                              if (!modalDueDate || !modalEstHours) return (
-                                <input disabled value="" placeholder="—" className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-lg text-[13px] font-bold text-gray-400 cursor-not-allowed" />
-                              );
-                              const createdAt = editingTask?.createdAt ? new Date(editingTask.createdAt) : new Date();
-                              const createHHMM = `${String(createdAt.getHours()).padStart(2,'0')}:${String(createdAt.getMinutes()).padStart(2,'0')}`;
-                              const m = modalEstHours.match(/^(\d{1,3}):([0-5]\d)$/);
-                              const estMinutes = m ? parseInt(m[1]) * 60 + parseInt(m[2]) : 0;
-                              const base = new Date(`${modalDueDate}T${createHHMM}:00`);
-                              const dl = new Date(base.getTime() + estMinutes * 60000);
-                              const pad = (n: number) => String(n).padStart(2, '0');
-                              const isNext = dl.toDateString() !== base.toDateString();
-                              const formatted = `${pad(dl.getDate())}-${pad(dl.getMonth()+1)}-${dl.getFullYear()} ${pad(dl.getHours())}:${pad(dl.getMinutes())}`;
-                              return (
-                                <div className="relative">
-                                  <input disabled value={formatted} className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-lg text-[13px] font-bold text-indigo-600 dark:text-indigo-400 cursor-not-allowed" />
-                                  {isNext && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] font-black uppercase tracking-widest text-amber-500">+1d</span>}
-                                </div>
-                              );
-                            })()}
                           </div>
                         </div>
                         <div className="grid grid-cols-3 gap-4">

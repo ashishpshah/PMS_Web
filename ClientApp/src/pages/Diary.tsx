@@ -148,8 +148,8 @@ export default function Diary() {
         : await diaryService.getMyDiary({ from, to });
       setEntries(data);
       setPage(1);
-    } catch {
-      showError('Failed to load diary entries.');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to load diary entries.');
     } finally {
       setLoading(false);
     }
@@ -231,8 +231,8 @@ export default function Diary() {
         await diaryService.remove(entry.id);
         showSuccess('Entry deleted.');
         await load();
-      } catch {
-        showError('Failed to delete entry.');
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Failed to delete entry.');
       }
     });
   };

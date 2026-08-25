@@ -445,7 +445,7 @@ export default function Projects() {
                           <button
                             onClick={() => confirmAlert('Delete this project? This will also delete all its tasks.', async () => {
                               try { await deleteProject(project.id); showSuccess('Project deleted'); }
-                              catch { showError('Failed to delete project'); }
+                              catch (err) { showError(err instanceof Error ? err.message : 'Failed to delete project'); }
                             })}
                             className="p-1 text-gray-400 hover:text-red-600"
                           >
@@ -635,7 +635,7 @@ export default function Projects() {
                         {canManageProjects && (canUpdateProject('/projects') || canDeleteProject('/projects')) && (
                           <div className="inline-flex space-x-0.5 transition-opacity">
                             {canUpdateProject('/projects') && <button onClick={() => handleOpenModal(project)} className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-gray-800 rounded border border-transparent hover:border-gray-100 transition-all"><Edit2 size={13} /></button>}
-                            {canDeleteProject('/projects') && <button onClick={() => confirmAlert('Delete this project? This will also delete all its tasks.', async () => { try { await deleteProject(project.id); showSuccess('Project deleted'); } catch { showError('Failed to delete project'); } })} className="p-1 text-gray-400 hover:text-red-600 hover:bg-white dark:hover:bg-gray-800 rounded border border-transparent hover:border-gray-100 transition-all"><Trash2 size={13} /></button>}
+                            {canDeleteProject('/projects') && <button onClick={() => confirmAlert('Delete this project? This will also delete all its tasks.', async () => { try { await deleteProject(project.id); showSuccess('Project deleted'); } catch (err) { showError(err instanceof Error ? err.message : 'Failed to delete project'); } })} className="p-1 text-gray-400 hover:text-red-600 hover:bg-white dark:hover:bg-gray-800 rounded border border-transparent hover:border-gray-100 transition-all"><Trash2 size={13} /></button>}
                           </div>
                         )}
                       </td>

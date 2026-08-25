@@ -96,7 +96,6 @@ function emptyItem(position: number): SaveTemplateItemForm {
     description: '',
     estimatedHours: 1,
     priority: 'medium',
-    dueDateOffsetDays: 0,
     tags: [],
     checklistItems: [],
     dependsOnPositions: [],
@@ -235,20 +234,7 @@ function ItemEditor({ item, index, total, userOptions, dependencyOptions, onChan
                 value={PRIORITY_OPTIONS.find(o => o.value === item.priority) ?? null}
                 onChange={opt => set({ priority: (opt?.value as Priority) ?? 'medium' })}
               />
-            </div>
-
-            {/* Due date offset */}
-            <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Due (days offset)</label>
-              <input
-                type="number"
-                min={0}
-                value={item.dueDateOffsetDays}
-                onChange={e => set({ dueDateOffsetDays: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
+</div>
           </div>
 
           {/* Assignee + QA Reviewer in one row */}
@@ -347,14 +333,14 @@ function ItemEditor({ item, index, total, userOptions, dependencyOptions, onChan
                   className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <Button type="button" size="sm" variant="outline" onClick={addCriteria}>Add</Button>
+</div>
               </div>
-            </div>
-          )}
-        </CardContent>
-      )}
-    </Card>
-  );
-}
+            )}
+          </CardContent>
+        )}
+      </Card>
+    );
+  }
 
 export default function TemplateForm() {
   const { id } = useParams<{ id: string }>();
@@ -414,15 +400,14 @@ export default function TemplateForm() {
           priority: i.priority as Priority,
           defaultAssigneeId: i.defaultAssigneeId,
           qaReviewerId: i.qaReviewerId,
-          dueDateOffsetDays: i.dueDateOffsetDays,
           tags: [...i.tags],
           checklistItems: [...i.checklistItems],
           dependsOnPositions: [...i.dependsOnPositions],
           reviewCriteria: [...i.reviewCriteria],
         })),
       });
-    } catch {
-      showError('Failed to load template');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to load template');
       navigate('/templates');
     } finally {
       setLoading(false);
