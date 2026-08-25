@@ -1,0 +1,8 @@
+{
+"SpaProxyServer": {
+"ServerUrl": "http://localhost:3000",
+"LaunchCommand": "npm run dev",
+"WorkingDirectory": "D:\\Projects\\AI\\PracticalApps\\PMS_Final_Backup\\ClientApp\\",
+"MaxTimeoutInSeconds": "120"
+}
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "Playwright MCP server registration for the Seeder persona. Run `npx playwright install msedge` once after cloning.",
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--browser=msedge",
+        "--headless=false",
+        "--isolated",
+        "--executable-path=C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+      ],
+      "env": {}
+    }
+  }
+}

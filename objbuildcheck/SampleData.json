@@ -1,0 +1,362 @@
+{
+  "roles": [
+    {
+      "roleId": 1,
+      "roleName": "System Admin",
+      "permissions": "Full Access"
+    },
+    {
+      "roleId": 2,
+      "roleName": "Project Manager",
+      "permissions": "Project Planning, Assignment, Monitoring"
+    },
+    {
+      "roleId": 3,
+      "roleName": "Senior Software Developer",
+      "permissions": "Architecture, Backend APIs, Code Review"
+    },
+    {
+      "roleId": 4,
+      "roleName": "Junior Software Developer",
+      "permissions": "Development Tasks"
+    },
+    {
+      "roleId": 5,
+      "roleName": "QA Tester",
+      "permissions": "Testing, Bug Reporting"
+    }
+  ],
+  "users": [
+    {
+      "userId": 2,
+      "name": "John Carter",
+      "email": "john@pms.com",
+      "role": "Project Manager",
+      "department": "Management",
+      "status": "Active"
+    },
+    {
+      "userId": 3,
+      "name": "Sarah Wilson",
+      "email": "sarah@pms.com",
+      "role": "Project Manager",
+      "department": "PMO",
+      "status": "Active"
+    },
+    {
+      "userId": 4,
+      "name": "Michael Brown",
+      "email": "michael@pms.com",
+      "role": "Senior Software Developer",
+      "department": "Development",
+      "status": "Active"
+    },
+    {
+      "userId": 5,
+      "name": "Daniel Lee",
+      "email": "daniel@pms.com",
+      "role": "Senior Software Developer",
+      "department": "Development",
+      "status": "Active"
+    },
+    {
+      "userId": 6,
+      "name": "Sophia Taylor",
+      "email": "sophia@pms.com",
+      "role": "Junior Software Developer",
+      "department": "Development",
+      "status": "Active"
+    },
+    {
+      "userId": 7,
+      "name": "Kevin Walker",
+      "email": "kevin@pms.com",
+      "role": "Junior Software Developer",
+      "department": "Development",
+      "status": "Active"
+    },
+    {
+      "userId": 8,
+      "name": "Olivia Harris",
+      "email": "olivia@pms.com",
+      "role": "QA Tester",
+      "department": "Testing",
+      "status": "Active"
+    },
+    {
+      "userId": 9,
+      "name": "Ethan Young",
+      "email": "ethan@pms.com",
+      "role": "QA Tester",
+      "department": "Testing",
+      "status": "Active"
+    }
+  ],
+  "project": {
+    "projectId": 1,
+    "projectName": "PMS Enterprise System",
+    "clientName": "Internal Product",
+    "ownerId": 2,
+    "status": "In Progress",
+    "priority": "High",
+    "startDate": "2026-06-01",
+    "endDate": "2026-11-30",
+    "estimatedBudget": 120000,
+    "description": "Enterprise Project Management System with Task Management, Permissions, Chat, Analytics and Activity Tracking."
+  },
+  "projectMembers": [
+    {
+      "projectId": 1,
+      "userId": 2,
+      "role": "Project Manager"
+    },
+    {
+      "projectId": 1,
+      "userId": 3,
+      "role": "Senior Software Developer"
+    },
+    {
+      "projectId": 1,
+      "userId": 4,
+      "role": "Senior Software Developer"
+    },
+    {
+      "projectId": 1,
+      "userId": 5,
+      "role": "Junior Software Developer"
+    },
+    {
+      "projectId": 1,
+      "userId": 6,
+      "role": "Junior Software Developer"
+    },
+    {
+      "projectId": 1,
+      "userId": 7,
+      "role": "QA Tester"
+    },
+    {
+      "projectId": 1,
+      "userId": 8,
+      "role": "QA Tester"
+    }
+  ],
+  "modules": [
+    {
+      "moduleId": 1,
+      "moduleName": "Authentication & Authorization",
+      "assignedLead": 3
+    },
+    {
+      "moduleId": 2,
+      "moduleName": "Project Management",
+      "assignedLead": 4
+    },
+    {
+      "moduleId": 3,
+      "moduleName": "Task Management",
+      "assignedLead": 3
+    },
+    {
+      "moduleId": 4,
+      "moduleName": "Dashboard & Reports",
+      "assignedLead": 4
+    },
+    {
+      "moduleId": 5,
+      "moduleName": "Chat System",
+      "assignedLead": 3
+    },
+    {
+      "moduleId": 6,
+      "moduleName": "Activity Logs",
+      "assignedLead": 4
+    }
+  ],
+  "tasks": [
+    {
+      "taskId": 101,
+      "projectId": 1,
+      "moduleId": 1,
+      "title": "Implement JWT Authentication",
+      "description": "Create JWT based login and authorization system.",
+      "assignedTo": 3,
+      "assignedBy": 2,
+      "priority": "High",
+      "status": "In Progress",
+      "estimatedHours": 18,
+      "actualHours": 10,
+      "startDate": "2026-06-05",
+      "dueDate": "2026-06-10"
+    },
+    {
+      "taskId": 102,
+      "projectId": 1,
+      "moduleId": 1,
+      "title": "Create Login API",
+      "description": "Develop secure login API endpoint.",
+      "assignedTo": 5,
+      "assignedBy": 3,
+      "priority": "Medium",
+      "status": "In Progress",
+      "estimatedHours": 8,
+      "actualHours": 3,
+      "startDate": "2026-06-06",
+      "dueDate": "2026-06-08"
+    },
+    {
+      "taskId": 103,
+      "projectId": 1,
+      "moduleId": 2,
+      "title": "Project CRUD APIs",
+      "description": "Create APIs for project management.",
+      "assignedTo": 4,
+      "assignedBy": 2,
+      "priority": "High",
+      "status": "Pending",
+      "estimatedHours": 20,
+      "actualHours": 0,
+      "startDate": "2026-06-10",
+      "dueDate": "2026-06-15"
+    },
+    {
+      "taskId": 104,
+      "projectId": 1,
+      "moduleId": 3,
+      "title": "Task Kanban APIs",
+      "description": "Develop APIs for Kanban task board.",
+      "assignedTo": 6,
+      "assignedBy": 4,
+      "priority": "High",
+      "status": "Pending",
+      "estimatedHours": 24,
+      "actualHours": 0,
+      "startDate": "2026-06-12",
+      "dueDate": "2026-06-18"
+    },
+    {
+      "taskId": 105,
+      "projectId": 1,
+      "moduleId": 5,
+      "title": "SignalR Chat Integration",
+      "description": "Implement real-time communication using SignalR.",
+      "assignedTo": 3,
+      "assignedBy": 2,
+      "priority": "High",
+      "status": "Pending",
+      "estimatedHours": 30,
+      "actualHours": 0,
+      "startDate": "2026-06-20",
+      "dueDate": "2026-06-28"
+    },
+    {
+      "taskId": 106,
+      "projectId": 1,
+      "moduleId": 4,
+      "title": "Dashboard Statistics API",
+      "description": "Develop APIs for dashboard analytics.",
+      "assignedTo": 5,
+      "assignedBy": 4,
+      "priority": "Medium",
+      "status": "Pending",
+      "estimatedHours": 12,
+      "actualHours": 0,
+      "startDate": "2026-06-15",
+      "dueDate": "2026-06-18"
+    }
+  ],
+  "subTasks": [
+    {
+      "subTaskId": 1001,
+      "taskId": 101,
+      "title": "Create Token Service",
+      "status": "Completed"
+    },
+    {
+      "subTaskId": 1002,
+      "taskId": 101,
+      "title": "Configure JWT Middleware",
+      "status": "Completed"
+    },
+    {
+      "subTaskId": 1003,
+      "taskId": 101,
+      "title": "Add Claims & Roles",
+      "status": "In Progress"
+    },
+    {
+      "subTaskId": 1004,
+      "taskId": 101,
+      "title": "Token Expiry Handling",
+      "status": "Pending"
+    },
+    {
+      "subTaskId": 1005,
+      "taskId": 103,
+      "title": "Create Project Table",
+      "status": "Completed"
+    },
+    {
+      "subTaskId": 1006,
+      "taskId": 103,
+      "title": "Build CRUD Endpoints",
+      "status": "Pending"
+    },
+    {
+      "subTaskId": 1007,
+      "taskId": 104,
+      "title": "Drag & Drop Status Update",
+      "status": "Pending"
+    },
+    {
+      "subTaskId": 1008,
+      "taskId": 104,
+      "title": "Task Status Validation",
+      "status": "Pending"
+    }
+  ],
+  "qaTasks": [
+    {
+      "qaTaskId": 1,
+      "relatedTaskId": 101,
+      "assignedTester": 7,
+      "title": "Test JWT Login",
+      "status": "Pending",
+      "priority": "High"
+    },
+    {
+      "qaTaskId": 2,
+      "relatedTaskId": 103,
+      "assignedTester": 8,
+      "title": "Test Project APIs",
+      "status": "Pending",
+      "priority": "Medium"
+    }
+  ],
+  "bugs": [
+    {
+      "bugId": "BUG-101",
+      "title": "JWT Token Expiring Early",
+      "relatedTaskId": 101,
+      "reportedBy": 7,
+      "assignedTo": 3,
+      "severity": "High",
+      "status": "In Progress"
+    },
+    {
+      "bugId": "BUG-102",
+      "title": "Kanban Status Not Updating",
+      "relatedTaskId": 104,
+      "reportedBy": 8,
+      "assignedTo": 6,
+      "severity": "Medium",
+      "status": "Pending"
+    }
+  ],
+  "priorities": [
+    "Low",
+    "Medium",
+    "High",
+    "Critical"
+  ]
+}
