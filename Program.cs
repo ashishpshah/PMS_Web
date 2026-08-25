@@ -1,7 +1,9 @@
 using System.Linq;
 using System.Text;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Configuration;
@@ -14,6 +16,8 @@ using TaskManagement.Services;
 using TaskManagement.Mappings;
 using TaskManagement.Hubs;
 using TaskManagement.Middleware;
+using TaskManagement.Filters;
+using TaskManagement.Validators;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,7 +34,39 @@ if (!string.IsNullOrWhiteSpace(sentryDsn))
 }
 
 // Add services to the container.
-builder.Services.AddControllers();
+// ValidationFilter (Filters/ValidationFilter.cs) is registered as a global action filter — it
+// runs before every controller action, trims incoming strings, and merges both DataAnnotations
+// (ModelState) and FluentValidation failures into one ApiResponse<T> 400 shape. The framework's
+// own automatic ModelState-invalid 400 is suppressed so ValidationFilter is the single source
+// of truth for the response shape (it still reads ModelState itself, so DataAnnotations keep
+// working — they just get reshaped into ApiResponse<T> instead of ValidationProblemDetails).
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ValidationFilter>();
+});
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.SuppressModelStateInvalidFilter = true;
+});
+// Registers every IValidator<T> implementation in Validators/ (AuthValidators.cs,
+// UserValidators.cs, RoleValidators.cs, ProjectValidators.cs, TaskValidators.cs,
+// WorkDiaryValidators.cs, TemplateValidators.cs, ChatValidators.cs) with DI so
+// ValidationFilter can resolve them by request-DTO type.
+builder.Services.AddValidatorsFromAssemblyContaining<LoginDtoValidator>();
+
+// Whenever a validator message embeds the {PropertyName} token, FluentValidation resolves it
+// through this DisplayNameResolver — by default that's just the raw C# property name
+// ("FirstName"), which reads badly in a client-facing message. This turns "FirstName" into
+// "First name" (PascalCase-split, sentence-cased) so messages like "{PropertyName} is
+// required." become a natural, standalone sentence: "First name is required." — no separate
+// "FieldName: " prefix needed anywhere downstream (see ValidationFilter.FormatFailure).
+FluentValidation.ValidatorOptions.Global.DisplayNameResolver = (_, member, _) =>
+{
+    var name = member?.Name;
+    if (string.IsNullOrEmpty(name)) return name;
+    var spaced = System.Text.RegularExpressions.Regex.Replace(name, "(?<=[a-z0-9])(?=[A-Z])", " ");
+    return char.ToUpperInvariant(spaced[0]) + spaced[1..].ToLowerInvariant();
+};
 
 // JWT Configuration
 var jwtKey = builder.Configuration["JwtSettings:Key"] ?? "PMS_Secure_Key_For_JWT_Token_2024_MinLength32Chars";
@@ -71,6 +107,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // Database Configuration
+// Note: transient deadlocks against the remote SQL Server host (see appsettings.json) do occur
+// under load — EF Core's own diagnostic message for these points at EnableRetryOnFailure, but
+// that requires every explicit `_context.Database.BeginTransactionAsync()` call (14 across
+// Services/, e.g. TaskService.StartTaskAsync/MarkAllChecklistCompleteAsync) to be rewrapped in
+// `Database.CreateExecutionStrategy().ExecuteAsync(...)` first, or each of those endpoints
+// throws "The configured execution strategy does not support user-initiated transactions"
+// instead. Left as-is deliberately — that's a real, separate refactor, not a one-line fix.
 builder.Services.AddDbContext<PMSDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 

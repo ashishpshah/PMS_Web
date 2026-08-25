@@ -597,6 +597,12 @@ export interface HoursSummaryUserRow {
   underReviewSeconds: number;
   totalSeconds: number;
   taskCount: number;
+  // Sum of EstimatedHours across the user's distinct tasks in scope.
+  estimatedHours: number;
+  // Sum of self-reported ActualHours the user logged across their status
+  // transitions in scope ("hours spent") — distinct from the auto-tracked
+  // productiveSeconds/totalSeconds above.
+  workingHoursSpent: number;
 }
 
 export interface HoursSummaryTaskRow {

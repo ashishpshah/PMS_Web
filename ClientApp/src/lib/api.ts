@@ -10,6 +10,16 @@ export const getAccessToken  = () => _accessToken;
 const getToken               = () => _accessToken;
 const getRefreshToken        = () => localStorage.getItem('pms_refresh_token');
 
+export interface ValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ApiError extends Error {
+  validationErrors?: ValidationError[];
+  errorCode?: string;
+}
+
 function clearAuth() {
   _accessToken = null;
   localStorage.removeItem('pms_refresh_token');
@@ -60,8 +70,6 @@ export async function tryRefreshAccessToken(): Promise<string | null> {
 async function fetchJson(endpoint: string, options: RequestInit = {}, isRetry = false, silent = false): Promise<unknown> {
   const url   = `${getApiUrl()}${endpoint}`;
   const token = getToken();
-  // `silent` requests skip the global loading bus so a caller can show its own
-  // local loader (e.g. an in-widget spinner) without triggering the app overlay.
   if (!silent) beginRequest();
   try {
     const response = await fetch(url, {
@@ -75,7 +83,6 @@ async function fetchJson(endpoint: string, options: RequestInit = {}, isRetry = 
     });
 
     if (response.status === 401 && !isRetry && !endpoint.startsWith('/auth/')) {
-      // Access token expired — try silent refresh then replay the request once
       const newToken = await tryRefreshAccessToken();
       if (newToken) return fetchJson(endpoint, options, true, silent);
       window.location.href = '/auth';
@@ -84,14 +91,28 @@ async function fetchJson(endpoint: string, options: RequestInit = {}, isRetry = 
 
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
-      if (response.status === 401) {
-        if (!endpoint.startsWith('/auth/')) window.location.href = '/auth';
-        throw new Error((errorBody as { message?: string }).message || 'Invalid email or password');
+      const message = (errorBody as { message?: string }).message || `API error: ${response.status}`;
+      const errorCode = (errorBody as { errorCode?: string }).errorCode;
+      // The API serializes with the default camelCase policy, so this is "errors", not "Errors"
+      // — reading the PascalCase name here always produced undefined, silently dropping every
+      // validation error's detail (the .message string above was left as the only thing shown,
+      // and it used to be a generic "One or more validation errors occurred." — see
+      // Filters/ValidationFilter.cs, which now puts the real, readable text there instead).
+      const rawErrors = (errorBody as { errors?: string[] }).errors;
+
+      // Each entry is now a complete, self-contained sentence ("First name is required.") with
+      // no "Field: " prefix (ValidationFilter no longer adds one), so there's nothing to split
+      // out into a field name here — field stays empty. Per-field inline-error UI would need
+      // the backend to return {field, message} pairs explicitly instead of flat strings.
+      let validationErrors: ValidationError[] | undefined;
+      if (rawErrors && Array.isArray(rawErrors) && rawErrors.length > 0) {
+        validationErrors = rawErrors.map(e => ({ field: '', message: e }));
       }
-      if (response.status === 403) {
-        throw new Error((errorBody as { message?: string }).message || 'Access Denied: You do not have permission to perform this action.');
-      }
-      throw new Error((errorBody as { message?: string }).message || `API error: ${response.status}`);
+
+      const err = new Error(message) as ApiError;
+      err.validationErrors = validationErrors;
+      err.errorCode = errorCode;
+      throw err;
     }
     return await response.json();
   } finally {

@@ -92,6 +92,15 @@ namespace TaskManagement.Mappings
 
             CreateMap<CreateTaskDto, TaskEntity>()
                 .ForMember(dest => dest.Tags, opt => opt.Ignore())
+                // CreateTaskDto.ChecklistItems is List<string> (raw item text); TaskEntity.
+                // ChecklistItems is List<ChecklistItem> (the entity). AutoMapper matches them by
+                // name convention with no configured string->ChecklistItem converter, which
+                // throws AutoMapperMappingException on every single task creation — checklist
+                // items are mandatory (TaskService.CreateTaskAsync rejects an empty list before
+                // this line even runs), so this crashed 100% of real task-creation calls.
+                // TaskService.CreateTaskAsync builds the actual ChecklistItem rows itself right
+                // after the mapping call, so this property must never be auto-mapped.
+                .ForMember(dest => dest.ChecklistItems, opt => opt.Ignore())
                 .ForMember(dest => dest.Progress, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedById, opt => opt.Ignore());

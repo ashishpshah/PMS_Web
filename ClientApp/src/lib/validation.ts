@@ -6,6 +6,11 @@ export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const USERNAME_REGEX = /^[a-zA-Z0-9._-]{3,30}$/;
 // Optional phone: digits, spaces, +, -, parentheses; 7-15 digits overall.
 const CONTACT_ALLOWED = /^[0-9+\-()\s]+$/;
+// At least one lowercase, one uppercase, one digit — matches Auth.tsx's
+// PASSWORD_STRENGTH_REGEX, now enforced here too (previously only the register/
+// reset-password screens enforced this; the admin Users.tsx create/edit form only
+// checked length, so an admin could set a weak password the backend now rejects).
+export const PASSWORD_STRENGTH_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
 
 export function validateRequired(value: string | undefined | null, label: string): string {
   return value && value.trim() ? '' : `${label} is required.`;
@@ -46,6 +51,9 @@ export function validatePassword(value: string | undefined | null): string {
   const v = value ?? '';
   if (!v) return 'Password is required.';
   if (v.length < 6) return 'Password must be at least 6 characters.';
+  if (!PASSWORD_STRENGTH_REGEX.test(v)) {
+    return 'Password must contain at least one uppercase letter, one lowercase letter, and one digit.';
+  }
   return '';
 }
 

@@ -165,7 +165,7 @@ export const reportService = {
       fromUtc?: string; toUtc?: string;
       totalProductiveSeconds: number; totalWorkingSeconds: number;
       filterUserId?: number; filterProjectId?: number;
-      byUser: Array<{ userId: number; userName: string; avatarUrl?: string; productiveSeconds: number; pausedSeconds: number; blockedSeconds: number; underReviewSeconds: number; totalSeconds: number; taskCount: number }>;
+      byUser: Array<{ userId: number; userName: string; avatarUrl?: string; productiveSeconds: number; pausedSeconds: number; blockedSeconds: number; underReviewSeconds: number; totalSeconds: number; taskCount: number; estimatedHours: number; workingHoursSpent: number }>;
       byTask: Array<{ taskId: number; taskCode: string; taskTitle: string; taskStatus: string; projectId: number; projectName: string; productiveSeconds: number; pausedSeconds: number; blockedSeconds: number; underReviewSeconds: number; totalSeconds: number }>;
       byProject: Array<{ projectId: number; projectName: string; productiveSeconds: number; pausedSeconds: number; blockedSeconds: number; underReviewSeconds: number; totalSeconds: number; taskCount: number; userCount: number }>;
     }>(`/reports/hours-summary${q ? `?${q}` : ''}`);

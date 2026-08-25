@@ -36,12 +36,22 @@ namespace TaskManagement.Services
 
         public async Task<ApiResponse<List<ProjectDto>>> GetAllProjectsAsync()
         {
+            // AsSplitQuery avoids a cartesian-product join across three independent collections
+            // (Members, Modules, Tasks) — combined into one query, EF returns Members×Modules×
+            // Tasks rows per project, which for a project with even a few dozen of each can
+            // balloon into tens of thousands of duplicate rows to materialize/fix up client-side
+            // (the DB round trip itself stays fast; it's this in-memory step that got slow).
+            // OrderBy is required for split queries returning multiple rows, so results stay
+            // consistent across the separate round trips (see TaskService.cs's paged task query
+            // for the same pattern already established elsewhere in this codebase).
             var projects = await _context.Projects
                 .Include(p => p.CreatedBy)
                 .Include(p => p.Owner)
                 .Include(p => p.Members).ThenInclude(m => m.User)
                 .Include(p => p.Modules)
                 .Include(p => p.Tasks)
+                .OrderBy(p => p.Id)
+                .AsSplitQuery()
                 .ToListAsync();
 
             var dtos = projects.Select(p =>
@@ -58,12 +68,14 @@ namespace TaskManagement.Services
 
         public async Task<ApiResponse<ProjectDto>> GetProjectByIdAsync(int id)
         {
+            // Same cartesian-product concern as GetAllProjectsAsync above — see its comment.
             var project = await _context.Projects
                 .Include(p => p.CreatedBy)
                 .Include(p => p.Owner)
                 .Include(p => p.Members).ThenInclude(m => m.User)
                 .Include(p => p.Modules)
                 .Include(p => p.Tasks)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (project == null)

@@ -234,7 +234,20 @@ export function ChecklistPanel({
             </span>
             <div className="flex items-center gap-2">
               <span className="text-[9px] font-black font-mono text-indigo-600">{progress}%</span>
-              {canManage && !allDone && (
+              {/*
+                Visible for either permission that can legitimately complete items:
+                - canManage (a manager/creator — e.g. QuickViewContainer's `isManager`), or
+                - canToggle (the assignee, once started — same gate individual checkboxes use).
+                Callers like Tasks.tsx's edit modal additionally restrict `canManage` itself to
+                `status === 'new'` (structural add/delete/reorder should only happen pre-start),
+                but Mark All is a bulk *toggle*, not a structural edit — gating it the same way
+                made it permanently unreachable there: isStarted (required to enable the button)
+                and status === 'new' (required for it to render at all) can never both be true,
+                since starting a task always moves its status off 'new' (TaskService.
+                StartTaskAsync). Falling back to canToggle keeps Mark All usable for the
+                assignee in that case without loosening what canManage itself is allowed to do.
+              */}
+              {(canManage || canToggle) && !allDone && (
                 <button
                   type="button"
                   onClick={handleMarkAll}

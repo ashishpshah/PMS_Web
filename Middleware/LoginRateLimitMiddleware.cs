@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 
 namespace TaskManagement.Middleware
@@ -19,8 +20,20 @@ namespace TaskManagement.Middleware
 
         public LoginRateLimitMiddleware(RequestDelegate next) => _next = next;
 
-        public async Task InvokeAsync(HttpContext ctx)
+        public async Task InvokeAsync(HttpContext ctx, IWebHostEnvironment env)
         {
+            // Skipped entirely in local Development: a single browser session already fires a
+            // silent /api/auth/refresh on every page mount (AuthContext.checkAuthStatus), so a
+            // handful of real interactions — or one Playwright suite run, which gets a fresh
+            // page/context per test — burns through the 5-per-minute budget on its own, well
+            // before hitting anything that looks like actual brute-forcing. Production
+            // (ASPNETCORE_ENVIRONMENT=Production) is unaffected — this check only widens dev.
+            if (env.IsDevelopment())
+            {
+                await _next(ctx);
+                return;
+            }
+
             if (ctx.Request.Method == HttpMethods.Post &&
                 (ctx.Request.Path.StartsWithSegments("/api/auth/login")          ||
                  ctx.Request.Path.StartsWithSegments("/api/auth/refresh")         ||

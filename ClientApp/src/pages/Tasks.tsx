@@ -503,6 +503,8 @@ export default function Tasks() {
   const [newAssigneeId, setNewAssigneeId]     = useState<number>(0);
   const [assigneeHistoryTaskId, setAssigneeHistoryTaskId] = useState<number | null>(null);
   const [reassignmentReason, setReassignmentReason] = useState<ReasonTag | ''>('');
+  // Popover showing <TaskStatusActions> for one List row / Kanban card at a time.
+  const [statusMenuTaskId, setStatusMenuTaskId] = useState<number | null>(null);
 
   // ── deep-link: ?newLinkedFrom=<parentTaskId> opens create modal pre-filled ─
   const [searchParams, setSearchParams] = useSearchParams();
@@ -525,16 +527,30 @@ export default function Tasks() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // ── deep-link filters from Dashboard "View all" links ─────────────────────
+  // ── deep-link filters from Dashboard "View all" links, defaulting to
+  // "assigned to me" (List/Kanban) when nothing else was specified at all ────
   // ?mine=1 (assigned to me) · ?createdByMe=1 · ?due=overdue|upcoming · ?blocked=1
   // ?userId=123 (a specific user's tasks, e.g. from Task Distribution's list view)
+  const appliedInitialScopeRef = React.useRef(false);
   useEffect(() => {
     const mine = searchParams.get('mine');
     const createdByMe = searchParams.get('createdByMe');
     const due = searchParams.get('due');
     const blocked = searchParams.get('blocked');
     const userId = searchParams.get('userId');
-    if (!mine && !createdByMe && !due && !blocked && !userId) return;
+    const hasAnyParam = !!(mine || createdByMe || due || blocked || userId);
+
+    if (!hasAnyParam) {
+      // No deep-link at all — default the List/Kanban view to "assigned to me",
+      // once, on first load only. Doesn't re-force it if the user later clears
+      // the assignee filter themselves to see all tasks.
+      if (!appliedInitialScopeRef.current && currentUser) {
+        setSelectedUserIds([currentUser.id]);
+        appliedInitialScopeRef.current = true;
+      }
+      return;
+    }
+    appliedInitialScopeRef.current = true;
 
     if (mine === '1' && currentUser) setSelectedUserIds([currentUser.id]);
     if (userId) { const n = Number(userId); if (!Number.isNaN(n)) setSelectedUserIds([n]); }
@@ -547,7 +563,7 @@ export default function Tasks() {
     ['mine', 'createdByMe', 'due', 'blocked', 'userId'].forEach(k => next.delete(k));
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [searchParams, currentUser]);
 
   // ── server-side task fetch ────────────────────────────────────────────────
   // Fires on mount, server-filterable filter changes, page changes, or after mutations.
@@ -599,6 +615,31 @@ export default function Tasks() {
     if (canDeleteTask('/tasks') || currentUser?.id === task.createdById) return true;
     const proj = projects.find(p => p.id === task.projectId);
     return proj ? (currentUser?.id === proj.ownerId || currentUser?.id === proj.createdById) : false;
+  };
+
+  // Props for <TaskStatusActions> — mirrors the computation used by the edit modal's
+  // "Status & Blocks" tab, shared here so List/Kanban status popovers stay consistent.
+  const getStatusActionProps = (task: Task) => {
+    const proj = projects.find(p => p.id === task.projectId);
+    const isAssignee = currentUser?.id === task.assigneeId;
+    const isManager = isAdmin || currentUser?.id === task.createdById
+      || (proj ? (currentUser?.id === proj.ownerId || currentUser?.id === proj.createdById) : false);
+    const isQa = task.qaAssigneeId != null && currentUser?.id === task.qaAssigneeId;
+    const checklistComplete = !task.checklistItems?.length || task.checklistItems.every(c => c.isCompleted);
+    const activeBlockItemCount = (task.blockChecklistItems ?? []).filter(i => i.status === 'active').length;
+    return { isAssignee, isManager, isQa, checklistComplete, activeBlockItemCount };
+  };
+
+  // onChange handler for <TaskStatusActions> used in the List/Kanban status popovers —
+  // mirrors the edit modal's Status & Blocks tab, and closes the popover on success.
+  const handleStatusMenuChange = (task: Task) => async (to: Status, reason?: string, actualHours?: number, blockItems?: AddBlockItem[]) => {
+    try {
+      await changeTaskStatus(task.id, to, reason, actualHours, blockItems);
+      refreshTasks();
+      const reviewer = to === 'under-review' && task.qaAssigneeId ? users.find(u => u.id === task.qaAssigneeId) : null;
+      showSuccess(reviewer ? `Submitted for review — ${reviewer.name}` : `Moved to ${STATUS_LABELS[to] ?? to}`);
+      setStatusMenuTaskId(null);
+    } catch (e) { showError(e instanceof Error ? e.message : 'Failed'); }
   };
 
   // Can create tasks: role perm OR is owner/creator of any visible project
@@ -1410,15 +1451,6 @@ export default function Tasks() {
                             })()}
 
 
-                            {/* Status condition badges */}
-                            {(task.isOverdue ?? (!!task.dueDate && new Date(task.dueDate).getTime() < Date.now() && task.status !== 'completed')) && (
-                              <div className="flex flex-wrap gap-1 mb-1.5">
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/50 rounded text-[8px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">
-                                  ⚠ Overdue
-                                </span>
-                              </div>
-                            )}
-
                             {/* Code + Title with search highlight */}
                             {task.code && (
                               <span className="inline-block mb-1 px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-[8px] font-black tracking-widest font-mono">
@@ -1477,21 +1509,21 @@ export default function Tasks() {
 
                             {/* Footer: date rows + actions */}
                             <div className="pt-2 border-t border-gray-50 dark:border-gray-800">
-                              {/* Row 1: Due Date & Time */}
+                              {/* Row 1: Estimate Hours */}
                               <div className="flex items-center justify-between mb-1">
                                 <div
-                                  className={cn(
-                                    "flex items-center gap-1 font-mono",
-                                    isOverdue
-                                      ? "text-red-800 dark:text-red-400"
-                                      : "text-blue-900 dark:text-blue-300"
-                                  )}
-                                  title={task.dueDate ? `Due ${formatDateTime(task.dueDate)}` : 'No due date'}
+                                  className="flex items-center gap-1 font-mono text-blue-900 dark:text-blue-300"
+                                  title={task.estimatedHours != null ? `Estimate ${toHHMM(task.estimatedHours)}` : 'No estimate'}
                                 >
-                                  <Calendar size={10} className="shrink-0" />
+                                  <Clock size={10} className="shrink-0" />
                                   <span className="text-[9px] font-bold whitespace-nowrap">
-                                    {formatDateTime(task.dueDate) || '—'}
+                                    {task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}
                                   </span>
+                                  {(task.isOverdue ?? (!!task.dueDate && new Date(task.dueDate).getTime() < Date.now() && task.status !== 'completed')) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/50 rounded text-[8px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">
+                                      ⚠ Overdue
+                                    </span>
+                                  )}
                                 </div>
                                 {/* Comments + subtasks inline with due row */}
                                 <div className="flex items-center gap-1.5">
@@ -1541,6 +1573,14 @@ export default function Tasks() {
                                     title="Reassign"
                                   >
                                     <User size={10} />
+                                  </button>
+                                  {/* Change status (guided) */}
+                                  <button
+                                    onClick={() => setStatusMenuTaskId(task.id)}
+                                    className="h-5 w-5 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex items-center justify-center text-gray-400 hover:text-indigo-600 transition-all opacity-0 group-hover:opacity-100"
+                                    title="Change status (guided)"
+                                  >
+                                    <MoreHorizontal size={10} />
                                   </button>
                                   {/* Assignee avatar */}
                                   <InteractiveLink type="user" id={task.assigneeId} className="h-5 w-5 rounded overflow-hidden border border-gray-100 dark:border-gray-800">
@@ -1600,9 +1640,6 @@ export default function Tasks() {
                     <th className="px-4 py-2 text-[10px] uppercase font-black text-gray-400 tracking-widest">Status</th>
                     <th className="px-4 py-2 text-[10px] uppercase font-black text-gray-400 tracking-widest cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => toggleSort('priority')}>
                       <div className="flex items-center">Priority <SortIcon field="priority" /></div>
-                    </th>
-                    <th className="px-4 py-2 text-[10px] uppercase font-black text-gray-400 tracking-widest cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => toggleSort('dueDate')}>
-                      <div className="flex items-center">Due Date <SortIcon field="dueDate" /></div>
                     </th>
                     <th className="px-4 py-2 text-[10px] uppercase font-black text-gray-400 tracking-widest cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => toggleSort('createdAt')}>
                       <div className="flex items-center">Created <SortIcon field="createdAt" /></div>
@@ -1721,6 +1758,14 @@ export default function Tasks() {
                               isSearchable={false}
                               size="sm"
                               className="w-32" />
+                            <button
+                              type="button"
+                              onClick={() => setStatusMenuTaskId(task.id)}
+                              className="h-6 w-6 shrink-0 flex items-center justify-center rounded border border-gray-100 dark:border-gray-700 text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-all"
+                              title="Change status (guided)"
+                            >
+                              <MoreHorizontal size={12} />
+                            </button>
                           </div>
                           {task.isBlocked && (
                             <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded text-[8px] font-black uppercase tracking-widest">
@@ -1753,28 +1798,23 @@ export default function Tasks() {
                         </div>
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap">
-                        <div className="flex items-center text-[11px] font-mono font-medium text-gray-500" title={task.dueDate ? formatDateTime(task.dueDate) : undefined}>
-                          <Clock size={11} className="mr-1" />{formatDateTime(task.dueDate) || '—'}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 whitespace-nowrap">
                         <div className="flex items-center text-[11px] font-mono font-medium text-gray-500" title={task.createdAt ? formatDateTime(task.createdAt) : undefined}>
                           <Calendar size={11} className="mr-1" />{task.createdAt ? formatDateTime(task.createdAt) : <span className="text-gray-200">—</span>}
                         </div>
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <span className="text-[11px] font-mono font-bold text-gray-500">
-                          {task.estimatedHours != null ? task.estimatedHours : <span className="text-gray-200">—</span>}
+                        <span className={cn("text-[11px] font-mono font-bold", isOverdue ? "text-rose-600 dark:text-rose-400" : "text-gray-500")}>
+                          {task.estimatedHours != null ? toHHMM(task.estimatedHours) : <span className="text-gray-200">—</span>}
                         </span>
                       </td>
                       <td className="px-4 py-2 text-right">
                         {task.estimatedHours != null && task.actualHours != null ? (
                           <span className={`text-[11px] font-mono font-bold ${task.actualHours > task.estimatedHours ? 'text-red-500' : 'text-emerald-600'}`}>
-                            {task.actualHours}
+                            {toHHMM(task.actualHours)}
                           </span>
                         ) : (
                           <span className="text-[11px] font-mono font-bold text-gray-500">
-                            {task.actualHours != null ? task.actualHours : <span className="text-gray-200">—</span>}
+                            {task.actualHours != null ? toHHMM(task.actualHours) : <span className="text-gray-200">—</span>}
                           </span>
                         )}
                       </td>
@@ -2469,11 +2509,11 @@ export default function Tasks() {
                                 canManage={canManageChecklist}
                                 isStarted={liveTask.startedAt != null}
                                 onStartTask={async () => { await startTask(editingTask.id); refreshTasks(); showSuccess('Task started'); }}
-                                onItemAdded={async (title) => { await addChecklistItem(editingTask.id, title, liveChecklist.length); }}
-                                onItemToggled={async (itemId, isCompleted) => { await toggleChecklistItem(editingTask.id, itemId, isCompleted); }}
-                                onItemUpdated={async (itemId, title, orderIndex) => { await updateChecklistItem(editingTask.id, itemId, title, orderIndex); }}
-                                onItemDeleted={async (itemId) => { await deleteChecklistItem(editingTask.id, itemId); }}
-                                onMarkAllComplete={async () => { await markAllChecklistComplete(editingTask.id); }} />
+                                onItemAdded={async (title) => { await addChecklistItem(editingTask.id, title, liveChecklist.length); refreshTasks(); }}
+                                onItemToggled={async (itemId, isCompleted) => { await toggleChecklistItem(editingTask.id, itemId, isCompleted); refreshTasks(); }}
+                                onItemUpdated={async (itemId, title, orderIndex) => { await updateChecklistItem(editingTask.id, itemId, title, orderIndex); refreshTasks(); }}
+                                onItemDeleted={async (itemId) => { await deleteChecklistItem(editingTask.id, itemId); refreshTasks(); }}
+                                onMarkAllComplete={async () => { await markAllChecklistComplete(editingTask.id); refreshTasks(); }} />
                             </div>
                           );
                         })()}
@@ -2988,6 +3028,21 @@ export default function Tasks() {
           onClose={() => setPendingHoursMove(null)}
         />
       )}
+
+      {/* Guided status change — "•••" button on List row / Kanban card */}
+      {statusMenuTaskId != null && (() => {
+        const menuTask = displayTasks.find(t => t.id === statusMenuTaskId);
+        if (!menuTask) return null;
+        return (
+          <TaskStatusMenuModal
+            task={menuTask}
+            isAdmin={isAdmin}
+            statusProps={getStatusActionProps(menuTask)}
+            onChange={handleStatusMenuChange(menuTask)}
+            onClose={() => setStatusMenuTaskId(null)}
+          />
+        );
+      })()}
     </PageTransition>
   );
 }
@@ -3138,27 +3193,16 @@ function HoursPromptModal({ taskTitle, statusLabel, onConfirm, onClose }: {
   }, [onClose, isValid, hoursInput, saving]);
 
   return (
-    <AnimatePresence>
-      <>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          onClick={onClose} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 14 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 14 }}
-          transition={{ duration: 0.16 }}
-          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl z-[60] flex flex-col"
-          role="dialog" aria-modal="true"
-        >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Hours Spent — {statusLabel}</p>
-              <h3 className="text-[14px] font-black text-gray-900 dark:text-white truncate">{taskTitle}</h3>
-            </div>
-            <button onClick={onClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-gray-400"><X size={16} /></button>
-          </div>
-          <div className="p-5 space-y-2">
-            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400">Hours (HH:MM)</label>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+      <Card className="w-full max-w-md border-none shadow-2xl bg-white dark:bg-gray-900 overflow-hidden ring-1 ring-white/10">
+        <div className="bg-indigo-600 p-4 flex items-center justify-between">
+          <h3 className="text-white font-black uppercase tracking-widest text-[11px]">Hours Spent — {statusLabel}</h3>
+          <button onClick={onClose} className="text-white/80 hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+        <CardContent className="p-6">
+          <h4 className="text-[14px] font-black text-gray-900 dark:text-white uppercase italic tracking-tight mb-4">{taskTitle}</h4>
+          <div className="space-y-2">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Hours (HH:MM)</label>
             <TimeInput
               value={hoursInput}
               onChange={setHoursInput}
@@ -3176,18 +3220,56 @@ function HoursPromptModal({ taskTitle, statusLabel, onConfirm, onClose }: {
                 : `Required to move this task to ${statusLabel} · max ${MAX_HOURS_PER_ENTRY}:00 per entry.`}
             </p>
           </div>
-          <div className="flex gap-2 px-5 py-4 border-t border-gray-100 dark:border-gray-800 shrink-0">
-            <button onClick={onClose}
-              className="flex-1 py-2 text-[11px] font-black uppercase tracking-widest border border-gray-200 dark:border-gray-700 text-gray-500 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-              Cancel
-            </button>
-            <button onClick={handleConfirm} disabled={saving || !isValid}
-              className="flex-1 py-2 text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          <div className="flex gap-2 mt-6">
+            <Button type="button" variant="ghost" onClick={onClose} className="flex-1 uppercase text-[11px] font-black">Cancel</Button>
+            <Button
+              type="button"
+              onClick={handleConfirm}
+              disabled={saving || !isValid}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white uppercase text-[11px] font-black shadow-lg shadow-indigo-600/20"
+            >
               {saving ? 'Saving...' : 'Confirm'}
-            </button>
+            </Button>
           </div>
-        </motion.div>
-      </>
-    </AnimatePresence>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Guided status change modal — wraps <TaskStatusActions> (the same transition/permission-aware
+// component used by the edit modal's "Status & Blocks" tab and QuickView) in the standard modal
+// chrome, so it can be triggered from a compact "•••" button on a List row or Kanban card without
+// being clipped by the Kanban card's overflow-hidden, and without duplicating its transition rules.
+function TaskStatusMenuModal({ task, isAdmin, statusProps, onChange, onClose }: {
+  task: Task;
+  isAdmin: boolean;
+  statusProps: { isAssignee: boolean; isManager: boolean; isQa: boolean; checklistComplete: boolean; activeBlockItemCount: number };
+  onChange: (to: Status, reason?: string, actualHours?: number, blockItems?: AddBlockItem[]) => Promise<void> | void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+      <Card className="w-full max-w-md border-none shadow-2xl bg-white dark:bg-gray-900 overflow-hidden ring-1 ring-white/10">
+        <div className="bg-indigo-600 p-4 flex items-center justify-between">
+          <h3 className="text-white font-black uppercase tracking-widest text-[11px]">Change Status</h3>
+          <button onClick={onClose} className="text-white/80 hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+        <CardContent className="p-6">
+          <h4 className="text-[14px] font-black text-gray-900 dark:text-white uppercase italic tracking-tight mb-4">{task.title}</h4>
+          <TaskStatusActions
+            currentStatus={task.status}
+            isAdmin={isAdmin}
+            {...statusProps}
+            onChange={onChange} />
+        </CardContent>
+      </Card>
+    </div>
   );
 }

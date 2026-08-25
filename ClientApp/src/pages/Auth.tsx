@@ -7,15 +7,13 @@ import { useAuth } from '../context/AuthContext';
 import { useSweetAlert } from '../context/SweetAlertContext';
 import { useData } from '../context/DataContext';
 import { showError, showSuccess } from '../lib/toast';
-import { validateName, validateEmail, validateContact } from '../lib/validation';
+import { validateName, validateEmail, validateContact, PASSWORD_STRENGTH_REGEX } from '../lib/validation';
 import { useAvailability, type AvailabilityState } from '../hooks/useAvailability';
 import { apiRequest } from '../lib/api';
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
 type AuthView = 'login' | 'register' | 'register-otp' | 'forgot' | 'reset-otp';
-
-const PASSWORD_STRENGTH_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
 
 // ── OTP input ─────────────────────────────────────────────────────────────────
 

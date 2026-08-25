@@ -792,6 +792,13 @@ namespace TaskManagement.DTOs
         public long UnderReviewSeconds { get; set; }
         public long TotalSeconds { get; set; }
         public int TaskCount { get; set; }
+        // Sum of EstimatedHours across the user's distinct tasks in scope.
+        public decimal EstimatedHours { get; set; }
+        // Sum of ActualHours the user logged (TaskStatusHistory.ActualHours) across
+        // their status transitions in scope — i.e. self-reported "hours spent",
+        // distinct from ProductiveSeconds/TotalSeconds which are auto-reconstructed
+        // from status-history timing rather than user-entered.
+        public decimal WorkingHoursSpent { get; set; }
     }
 
     public class HoursSummaryTaskRowDto

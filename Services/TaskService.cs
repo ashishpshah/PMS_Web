@@ -122,6 +122,15 @@ namespace TaskManagement.Services
                 .Include(t => t.Comments).ThenInclude(c => c.User)
                 .Include(t => t.ChecklistItems)
                 .Include(t => t.BlockEntries).ThenInclude(b => b.BlockedBy)
+                // Without this, every task returned by the list endpoint had an empty
+                // BlockChecklistItems regardless of real state (only GetTaskByIdAsync included
+                // it) — so any view built from this list (Tasks.tsx's pagedTasks, which drives
+                // its Kanban/List cards and the Status & Blocks tab) could never see a blocked
+                // task's active block items: TaskBlockPanel's "Resolve" action silently never
+                // appeared, even though the backend correctly still enforced (and rejected
+                // unblocking against) the real, unseen active item.
+                .Include(t => t.BlockChecklistItems).ThenInclude(b => b.CreatedBy)
+                .Include(t => t.BlockChecklistItems).ThenInclude(b => b.ResolvedBy)
                 .AsSplitQuery()
                 .OrderByDescending(t => t.CreatedAt)
                 .Skip((page - 1) * pageSize)
@@ -154,6 +163,10 @@ namespace TaskManagement.Services
                         Reason = b.Reason, IsActive = b.IsActive,
                         BlockedAt = b.BlockedAt, ResolvedAt = b.ResolvedAt
                     }).ToList();
+                dto.BlockChecklistItems = t.BlockChecklistItems
+                    .OrderBy(b => b.CreatedAt)
+                    .Select(b => MapBlockChecklistItem(b))
+                    .ToList();
                 return dto;
             }).ToList();
 
@@ -3084,15 +3097,15 @@ namespace TaskManagement.Services
             if (task == null)
                 return new ApiResponse<AttachmentDto> { Success = false, Message = "Task not found" };
 
-            if (file == null || file.Length == 0)
-                return new ApiResponse<AttachmentDto> { Success = false, Message = "No file provided." };
+            // Delegates size/extension/magic-byte checks to the shared helper (also used by
+            // ChatService) so a renamed executable with an allowed extension is rejected here
+            // too, matching chat attachments' rigor rather than duplicating a weaker check.
+            var (validFile, fileError) = await TaskManagement.Validators.FileValidationHelper.ValidateFileAsync(
+                file, AllowedAttachmentExtensions, MaxAttachmentBytes);
+            if (!validFile)
+                return new ApiResponse<AttachmentDto> { Success = false, Message = fileError };
 
-            if (file.Length > MaxAttachmentBytes)
-                return new ApiResponse<AttachmentDto> { Success = false, Message = "File exceeds the 10 MB limit." };
-
-            var ext = Path.GetExtension(file.FileName);
-            if (string.IsNullOrEmpty(ext) || !AllowedAttachmentExtensions.Contains(ext))
-                return new ApiResponse<AttachmentDto> { Success = false, Message = $"File type '{ext}' is not allowed." };
+            var ext = Path.GetExtension(file!.FileName);
 
             var webRoot     = _env.WebRootPath;
             var storedName  = $"{Guid.NewGuid()}{ext}";

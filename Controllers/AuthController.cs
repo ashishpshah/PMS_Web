@@ -47,7 +47,8 @@ namespace TaskManagement.Controllers
 
         [HttpPost("refresh")]
         [AllowAnonymous]
-        public async Task<ActionResult<ApiResponse<LoginResponseDto>>> Refresh([FromBody] RefreshTokenRequestDto? dto)
+        public async Task<ActionResult<ApiResponse<LoginResponseDto>>> Refresh(
+            [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] RefreshTokenRequestDto? dto)
         {
             // Accept refresh token from httpOnly cookie (preferred) or request body (fallback).
             var refreshToken = Request.Cookies["pms_rt"] ?? dto?.RefreshToken;

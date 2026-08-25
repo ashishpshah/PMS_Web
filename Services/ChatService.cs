@@ -287,63 +287,12 @@ namespace TaskManagement.Services
             return await _db.ChatAttachments.FindAsync(attachmentId);
         }
 
-        // Maps allowed extensions to the magic bytes we expect at offset 0.
-        // A null value means "no magic-byte check required" (plain-text types).
-        private static readonly Dictionary<string, byte[]?> MagicBytes = new(StringComparer.OrdinalIgnoreCase)
-        {
-            { ".jpg",  new byte[] { 0xFF, 0xD8, 0xFF } },
-            { ".jpeg", new byte[] { 0xFF, 0xD8, 0xFF } },
-            { ".png",  new byte[] { 0x89, 0x50, 0x4E, 0x47 } },
-            { ".gif",  new byte[] { 0x47, 0x49, 0x46, 0x38 } },
-            { ".webp", new byte[] { 0x52, 0x49, 0x46, 0x46 } },  // RIFF header
-            { ".pdf",  new byte[] { 0x25, 0x50, 0x44, 0x46 } },  // %PDF
-            { ".zip",  new byte[] { 0x50, 0x4B, 0x03, 0x04 } },
-            { ".rar",  new byte[] { 0x52, 0x61, 0x72, 0x21 } },
-            { ".7z",   new byte[] { 0x37, 0x7A, 0xBC, 0xAF } },
-            { ".docx", new byte[] { 0x50, 0x4B, 0x03, 0x04 } },  // ZIP-based
-            { ".xlsx", new byte[] { 0x50, 0x4B, 0x03, 0x04 } },
-            { ".pptx", new byte[] { 0x50, 0x4B, 0x03, 0x04 } },
-            { ".mp4",  new byte[] { 0x00, 0x00, 0x00 } },        // ftyp box – first 3 bytes
-            { ".mov",  new byte[] { 0x00, 0x00, 0x00 } },
-            { ".webm", new byte[] { 0x1A, 0x45, 0xDF, 0xA3 } },
-            { ".doc",  null },  // Legacy OLE — skip magic check
-            { ".xls",  null },
-            { ".ppt",  null },
-            { ".txt",  null },
-            { ".csv",  null },
-            { ".json", null },
-            { ".xml",  null },
-        };
-
-        public async Task<(bool valid, string error)> ValidateFileAsync(IFormFile file)
-        {
-            if (file == null || file.Length == 0)
-                return (false, "No file provided.");
-
-            if (file.Length > MaxFileSizeBytes)
-                return (false, "File exceeds 20 MB limit.");
-
-            var ext = Path.GetExtension(file.FileName);
-            if (string.IsNullOrEmpty(ext) || !AllowedExtensions.Contains(ext))
-                return (false, $"File type '{ext}' is not allowed.");
-
-            // P2-G: validate magic bytes so a renamed executable is rejected
-            if (MagicBytes.TryGetValue(ext, out var magic) && magic != null)
-            {
-                var header = new byte[magic.Length];
-                using var stream = file.OpenReadStream();
-                var read = await stream.ReadAsync(header, 0, header.Length);
-                if (read < header.Length)
-                    return (false, "File is too small or corrupt.");
-                for (var i = 0; i < magic.Length; i++)
-                {
-                    if (header[i] != magic[i])
-                        return (false, $"File content does not match the declared type '{ext}'.");
-                }
-            }
-
-            return (true, string.Empty);
-        }
+        // Size/extension/magic-byte validation now lives in the shared
+        // TaskManagement.Validators.FileValidationHelper (also used by TaskService's
+        // attachment upload) — this method just delegates, keeping the allow-list and
+        // size cap local to chat (they differ slightly from task attachments).
+        public Task<(bool valid, string error)> ValidateFileAsync(IFormFile file) =>
+            TaskManagement.Validators.FileValidationHelper.ValidateFileAsync(file, AllowedExtensions, MaxFileSizeBytes);
 
         private static string GetFileCategory(string ext) => ext.ToLowerInvariant() switch
         {

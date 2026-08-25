@@ -7,7 +7,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Mail, Shield, Briefcase, CheckCircle2, ChevronLeft, MapPin, Clock, ListTodo, AlertCircle, Check, Save, X } from 'lucide-react';
 import { InteractiveLink } from '../components/ui/InteractiveLink';
-import { cn, formatDate, formatDateTime } from '../lib/utils';
+import { cn, formatDateTime, toHHMM } from '../lib/utils';
 import { PageTransition } from '../components/Layout/PageTransition';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
@@ -208,7 +208,9 @@ export default function UserDetails() {
                           <InteractiveLink type="task" id={task.id}>
                             <h4 className="font-bold text-[12px] hover:text-indigo-600 transition-colors uppercase tracking-tight truncate font-display">{task.title}</h4>
                           </InteractiveLink>
-                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mt-0.5 font-mono">ETD: {formatDate(task.dueDate)}</p>
+                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mt-0.5 font-mono flex items-center gap-1">
+                            <Clock size={9} className="opacity-60" /> {task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}
+                          </p>
                         </div>
                         <Badge variant={task.status === 'completed' ? 'success' : 'info'} className="text-[9px] uppercase tracking-tighter h-5">{task.status}</Badge>
                       </CardContent>

@@ -512,7 +512,7 @@ namespace TaskManagement.Services
 
             // Load tasks (with project info).
             var allTasks = await _context.Tasks
-                .Select(t => new { t.Id, t.Code, t.Title, t.Status, t.CreatedAt, t.AssignedToId, t.ProjectId })
+                .Select(t => new { t.Id, t.Code, t.Title, t.Status, t.CreatedAt, t.AssignedToId, t.ProjectId, t.EstimatedHours })
                 .ToListAsync(ct);
 
             // Apply project filter at task level.
@@ -536,11 +536,19 @@ namespace TaskManagement.Services
                 .GroupBy(h => h.TaskId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskAssignmentHistory>)g.ToList());
 
-            var projectIds = tasks.Select(t => t.ProjectId).Distinct().ToList();
-            var projectNames = await _context.Projects
-                .Where(p => projectIds.Contains(p.Id))
+            // All active projects in scope (or just the one filtered project, active or not —
+            // an explicit selection always wins) — used both to seed "By Project" so it always
+            // lists every active project (zero-filled), and as the ProjectName lookup for By
+            // Task/By Project rows built from actual task data.
+            var projectsForSeed = await (filterProjectId.HasValue
+                    ? _context.Projects.Where(p => p.Id == filterProjectId.Value)
+                    : _context.Projects.Where(p => p.Status == "active"))
                 .Select(p => new { p.Id, p.Name })
-                .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+                .ToListAsync(ct);
+            var projectNames = projectsForSeed.ToDictionary(p => p.Id, p => p.Name);
+            // Guards the final ByProject output against non-active projects sneaking in via
+            // the dynamic-creation fallback below (e.g. a task on a since-archived project).
+            var activeProjectIdSet = new HashSet<int>(projectsForSeed.Select(p => p.Id));
 
             var emptyStatus = new List<TaskStatusHistory>();
             var emptyAssign = new List<TaskAssignmentHistory>();
@@ -552,6 +560,27 @@ namespace TaskManagement.Services
 
             // Track distinct users per project
             var projectUsers = new Dictionary<int, HashSet<int>>();
+
+            // ── Pre-seed byUser/byProject with every active user/project (zero-filled) so
+            // the "By User"/"By Project" tabs always list the whole active roster, even with
+            // no tracked time in the current filter/period. Matches the app's "show the whole
+            // team" convention used elsewhere (see GetProjectStatusMatrixAsync). An explicit
+            // filterUserId selection always wins, active or not. The SystemAdmin account
+            // (RoleId 1) is never shown — it's a root/utility account, not a team member.
+            var usersForSeed = await (filterUserId.HasValue
+                    ? _context.Users.Where(u => u.Id == filterUserId.Value)
+                    : _context.Users.Where(u => u.IsActive))
+                .Where(u => u.RoleId != 1)
+                .Select(u => new { u.Id, u.FullName, u.AvatarUrl })
+                .ToListAsync(ct);
+            // Guards the final ByUser output against inactive users sneaking in via the
+            // dynamic-creation fallback below (e.g. a deactivated user with historical time).
+            var activeUserIdSet = new HashSet<int>(usersForSeed.Select(u => u.Id));
+            foreach (var u in usersForSeed)
+                byUser[u.Id] = new HoursSummaryUserRowDto { UserId = u.Id, UserName = u.FullName, AvatarUrl = u.AvatarUrl };
+
+            foreach (var p in projectsForSeed)
+                byProject[p.Id] = new HoursSummaryProjectRowDto { ProjectId = p.Id, ProjectName = p.Name };
 
             foreach (var t in tasks)
             {
@@ -637,7 +666,11 @@ namespace TaskManagement.Services
                 foreach (var uid in windows.Where(w => w.UserId != 0).Select(w => w.UserId).Distinct())
                 {
                     if (filterUserId.HasValue && uid != filterUserId.Value) continue;
-                    if (byUser.TryGetValue(uid, out var ur) && ur.TotalSeconds > 0) ur.TaskCount++;
+                    if (byUser.TryGetValue(uid, out var ur) && ur.TotalSeconds > 0)
+                    {
+                        ur.TaskCount++;
+                        ur.EstimatedHours += t.EstimatedHours ?? 0;
+                    }
                 }
                 if (byTask.ContainsKey(t.Id))
                 {
@@ -649,6 +682,26 @@ namespace TaskManagement.Services
             // Populate UserCount for projects
             foreach (var kv in projectUsers)
                 if (byProject.TryGetValue(kv.Key, out var pr)) pr.UserCount = kv.Value.Count;
+
+            // ── Working Hours Spent — sum of self-reported ActualHours logged on each
+            // status transition (TaskStatusHistory.ActualHours), attributed to whoever
+            // made that transition. This is distinct from ProductiveSeconds/TotalSeconds
+            // above, which are auto-reconstructed from status-history timing rather than
+            // user-entered. Scoped by the same project filter (via taskIds) and date
+            // window (via ChangedAt) as the rest of this report.
+            var actualHoursRows = await _context.TaskStatusHistories
+                .Where(h => taskIds.Contains(h.TaskId) && h.ActualHours != null
+                         && h.ChangedAt >= winStart && h.ChangedAt < winEnd)
+                .Select(h => new { h.ChangedById, h.ActualHours })
+                .ToListAsync(ct);
+
+            foreach (var row in actualHoursRows)
+            {
+                if (filterUserId.HasValue && row.ChangedById != filterUserId.Value) continue;
+                if (!byUser.TryGetValue(row.ChangedById, out var uRowHrs))
+                    byUser[row.ChangedById] = uRowHrs = new HoursSummaryUserRowDto { UserId = row.ChangedById };
+                uRowHrs.WorkingHoursSpent += row.ActualHours ?? 0;
+            }
 
             // Bulk-load user names + avatars
             var userIds = byUser.Keys.ToList();
@@ -664,8 +717,13 @@ namespace TaskManagement.Services
                 kv.Value.AvatarUrl = info.AvatarUrl;
             }
 
-            var totalProd    = byUser.Values.Sum(u => u.ProductiveSeconds);
-            var totalWorking = byUser.Values.Sum(u => u.TotalSeconds);
+            // Final active-only view — guards against inactive users / non-active projects
+            // that got dynamically created above (e.g. via a task's actual-hours history)
+            // rather than the pre-seed, so "only active" holds no matter how a row was added.
+            var activeByUser = byUser.Values.Where(u => activeUserIdSet.Contains(u.UserId)).ToList();
+
+            var totalProd    = activeByUser.Sum(u => u.ProductiveSeconds);
+            var totalWorking = activeByUser.Sum(u => u.TotalSeconds);
 
             return new ApiResponse<HoursSummaryDto>
             {
@@ -678,9 +736,9 @@ namespace TaskManagement.Services
                     TotalWorkingSeconds    = totalWorking,
                     FilterUserId           = filterUserId,
                     FilterProjectId        = filterProjectId,
-                    ByUser    = byUser.Values.OrderByDescending(u => u.ProductiveSeconds).ToList(),
+                    ByUser    = activeByUser.OrderByDescending(u => u.ProductiveSeconds).ToList(),
                     ByTask    = byTask.Values.OrderByDescending(t => t.ProductiveSeconds).ToList(),
-                    ByProject = byProject.Values.OrderByDescending(p => p.ProductiveSeconds).ToList(),
+                    ByProject = byProject.Values.Where(p => activeProjectIdSet.Contains(p.ProjectId)).OrderByDescending(p => p.ProductiveSeconds).ToList(),
                 }
             };
         }

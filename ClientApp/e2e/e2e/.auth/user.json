@@ -1,0 +1,33 @@
+{
+  "cookies": [
+    {
+      "name": "pms_rt",
+      "value": "fQt%2BaQiqbORyJQnauHtqoGDIKNFKgBqxTizTZOeYy%2BPLGuDQS7%2FJU0UGVwOuDAY0IQ8HnrqGXmL%2FDUiSfeJBFw%3D%3D",
+      "domain": "localhost",
+      "path": "/api/auth",
+      "expires": 1787939637.882466,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Strict"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:3001",
+      "localStorage": [
+        {
+          "name": "pms_user",
+          "value": "{\"id\":1,\"userName\":\"admin\",\"email\":\"admin@pms.com\",\"firstName\":\"System\",\"lastName\":\"Admin\",\"fullName\":\"System Admin\",\"roleId\":1,\"roleName\":\"System Administrator\",\"isAdmin\":true,\"avatarUrl\":null,\"contactNo\":null,\"isActive\":true,\"isDeleted\":false,\"isImpersonated\":false,\"impersonatedByName\":null,\"name\":\"System Admin\",\"username\":\"admin\",\"role\":\"System Administrator\"}"
+        },
+        {
+          "name": "pms-theme",
+          "value": "system"
+        },
+        {
+          "name": "pms_refresh_token",
+          "value": "fQt+aQiqbORyJQnauHtqoGDIKNFKgBqxTizTZOeYy+PLGuDQS7/JU0UGVwOuDAY0IQ8HnrqGXmL/DUiSfeJBFw=="
+        }
+      ]
+    }
+  ]
+}

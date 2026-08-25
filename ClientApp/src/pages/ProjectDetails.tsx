@@ -13,7 +13,7 @@ import { PageTransition } from '../components/Layout/PageTransition';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ReassignModal } from '../components/ui/ReassignModal';
 import { ProgressBar } from '../components/ui/ProgressBar';
-import { cn, formatDate, formatDateTime, copyToClipboard } from '../lib/utils';
+import { cn, formatDate, formatDateTime, copyToClipboard, toHHMM } from '../lib/utils';
 import { ReasonTag, Task } from '../types';
 import { showSuccess, showError } from '../lib/toast';
 import { taskService } from '../services/task.service';
@@ -142,7 +142,7 @@ export default function ProjectDetails() {
                           {task.module && (
                             <span className="bg-gray-50 dark:bg-gray-800 text-gray-500 px-1 py-0.5 rounded text-[8px] font-black">{task.module}</span>
                           )}
-                          <span className="flex items-center"><Clock size={10} className="mr-1" /> {formatDate(task.dueDate)}</span>
+                          <span className="flex items-center"><Clock size={10} className="mr-1" /> {task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}</span>
                           <span className={cn(
                             "px-1 rounded-sm",
                             task.priority === 'critical' ? "text-rose-600 bg-rose-50 dark:bg-rose-900/10" : task.priority === 'high' ? "text-red-500 bg-red-50 dark:bg-red-900/10" : "text-gray-400"

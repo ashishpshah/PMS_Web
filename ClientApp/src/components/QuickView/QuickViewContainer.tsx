@@ -446,19 +446,12 @@ export function QuickViewContainer() {
               <div className="p-2 bg-gray-50/50 dark:bg-gray-900/50 rounded border border-gray-100/50 dark:border-gray-800/50">
                 <div className="flex items-center text-gray-400 mb-0.5">
                   <Calendar size={10} className="mr-1.5" />
-                  <span className="text-[8px] font-black uppercase tracking-widest">Deadline</span>
+                  <span className="text-[8px] font-black uppercase tracking-widest">Created Date | Est. Time</span>
                 </div>
                 <div className="text-[11px] font-black font-mono">
-                  {(() => {
-                    if (!task.dueDate) return '--';
-                    const createdAt = task.createdAt ? new Date(task.createdAt) : new Date();
-                    const createHHMM = `${String(createdAt.getHours()).padStart(2,'0')}:${String(createdAt.getMinutes()).padStart(2,'0')}`;
-                    const estMinutes = task.estimatedHours ? Math.round(task.estimatedHours * 60) : 0;
-                    const base = new Date(`${task.dueDate}T${createHHMM}:00`);
-                    const deadline = new Date(base.getTime() + estMinutes * 60000);
-                    const pad = (n: number) => String(n).padStart(2, '0');
-                    return `${pad(deadline.getDate())}-${pad(deadline.getMonth()+1)}-${deadline.getFullYear()} ${pad(deadline.getHours())}:${pad(deadline.getMinutes())}`;
-                  })()}
+                  {task.createdAt ? formatDate(task.createdAt) : '—'}
+                  <span className="text-gray-300 dark:text-gray-700 mx-1">|</span>
+                  {task.estimatedHours != null ? toHHMM(task.estimatedHours) : '—'}
                 </div>
               </div>
               <button

@@ -40,3 +40,4 @@ publish/
 wwwroot/assets/
 appsettings.Production.json
 
+ClientApp/test-results/*

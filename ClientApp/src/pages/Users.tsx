@@ -20,6 +20,7 @@ import { PageTransition } from '../components/Layout/PageTransition';
 import { useSweetAlert } from '../context/SweetAlertContext';
 import { showError, showSuccess } from '../lib/toast';
 import { usePermissions } from '../hooks/usePermissions';
+import { useValidationErrors } from '../hooks/useValidationErrors';
 import type { AvailabilityState } from '../hooks/useAvailability';
 
 type StatusFilter = 'active' | 'inactive' | 'deleted';
@@ -72,6 +73,8 @@ export default function Users() {
     excludeUserId: editingUser?.id,
   });
 
+  const { errors: serverErrors, setFromApiError, clearErrors: clearServerErrors } = useValidationErrors();
+
   useEffect(() => {
     roleService.getAll().then(setRoles).catch(() => {});
   }, []);
@@ -112,6 +115,7 @@ export default function Users() {
 
   const handleOpenModal = (user?: User) => {
     setFormErrors({});
+    clearServerErrors();
     if (user) {
       setEditingUser(user);
       setAvatarPreview(user.avatar ?? null);
@@ -140,6 +144,7 @@ export default function Users() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    clearServerErrors();
     const formData = new FormData(e.currentTarget);
     const roleId = selectedRoleId || Number(formData.get('roleId'));
     const firstName = ((formData.get('firstName') as string) || '').trim();
@@ -148,15 +153,15 @@ export default function Users() {
     const contactNo = ((formData.get('contactNo') as string) || '').trim();
     const password = (formData.get('password') as string) || '';
 
-    const errors = collectErrors({
+    const clientErrors = collectErrors({
       firstName: validateName(firstName, 'First name'),
       lastName: validateName(lastName, 'Last name'),
       email: validateEmail(email) || (emailAvail === 'taken' ? 'This email is already registered.' : ''),
       contactNo: validateContact(contactNo),
       password: editingUser ? '' : validatePassword(password),
     });
-    setFormErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+    setFormErrors(clientErrors);
+    if (Object.keys(clientErrors).length > 0) return;
 
     const userData: User = {
       id: editingUser?.id || Date.now(),
@@ -184,6 +189,7 @@ export default function Users() {
       setIsModalOpen(false);
       setEditingUser(null);
     } catch (err) {
+      setFromApiError(err);
       showError(err instanceof Error ? err.message : 'Failed to save member');
     }
   };
@@ -512,30 +518,30 @@ export default function Users() {
               <div>
                 <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">First Name</label>
                 <input name="firstName" type="text" defaultValue={editingUser?.firstName} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="John" />
-                {formErrors.firstName && <p className="text-[11px] text-red-500 mt-1">{formErrors.firstName}</p>}
+                {(formErrors.firstName || serverErrors.firstname) && <p className="text-[11px] text-red-500 mt-1">{formErrors.firstName || serverErrors.firstname}</p>}
               </div>
               <div>
                 <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Last Name</label>
                 <input name="lastName" type="text" defaultValue={editingUser?.lastName} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Doe" />
-                {formErrors.lastName && <p className="text-[11px] text-red-500 mt-1">{formErrors.lastName}</p>}
+                {(formErrors.lastName || serverErrors.lastname) && <p className="text-[11px] text-red-500 mt-1">{formErrors.lastName || serverErrors.lastname}</p>}
               </div>
             </div>
             {!editingUser && (
               <div>
                 <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Password</label>
                 <input name="password" type="password" autoComplete="new-password" className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="At least 6 characters" />
-                {formErrors.password && <p className="text-[11px] text-red-500 mt-1">{formErrors.password}</p>}
+                {(formErrors.password || serverErrors.password) && <p className="text-[11px] text-red-500 mt-1">{formErrors.password || serverErrors.password}</p>}
               </div>
             )}
             <div>
               <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Email Address</label>
               <input name="email" type="email" value={emailValue} onChange={e => setEmailValue(e.target.value)} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="john@example.com" />
-              {formErrors.email ? <p className="text-[11px] text-red-500 mt-1">{formErrors.email}</p> : <AvailabilityHint state={emailAvail} label="Email" />}
+              {(formErrors.email || serverErrors.email) ? <p className="text-[11px] text-red-500 mt-1">{formErrors.email || serverErrors.email}</p> : <AvailabilityHint state={emailAvail} label="Email" />}
             </div>
             <div>
               <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Mobile No</label>
               <input name="contactNo" type="tel" defaultValue={editingUser?.contactNo} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="+91 98765 43210" />
-              {formErrors.contactNo && <p className="text-[11px] text-red-500 mt-1">{formErrors.contactNo}</p>}
+              {(formErrors.contactNo || serverErrors.contactno) && <p className="text-[11px] text-red-500 mt-1">{formErrors.contactNo || serverErrors.contactno}</p>}
             </div>
             <div>
               <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Role</label>
