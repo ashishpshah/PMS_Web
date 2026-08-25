@@ -5,26 +5,22 @@ using TaskManagement.DTOs;
 
 namespace TaskManagement.Services
 {
-    /// <summary>Binds to "WorkingHours" config section.</summary>
-    public class WorkingHoursOptions
-    {
-        public int WorkStartHour { get; set; } = 10;
-        public int WorkEndHour   { get; set; } = 19;
-    }
-
     internal static class EffortHelpers
     {
-        // Called once at app startup from Program.cs with values from appsettings.
-        internal static void Configure(WorkingHoursOptions opts)
+        // Productive statuses: all statuses where time spent counts as effort
+        // Configure as needed — currently all statuses except "completed" are productive
+        internal static readonly HashSet<string> ProductiveStatuses = new(StringComparer.OrdinalIgnoreCase)
         {
-            WorkStart = new TimeSpan(opts.WorkStartHour, 0, 0);
-            WorkEnd   = new TimeSpan(opts.WorkEndHour,   0, 0);
-        }
-
-        internal const string ProductiveStatus = "in-progress";
+            "new",
+            "in-progress",
+            "paused",
+            "blocked",
+            "under-review",
+            "issues"
+        };
 
         internal static bool IsProductiveStatus(string status) =>
-            string.Equals(status, ProductiveStatus, StringComparison.OrdinalIgnoreCase);
+            ProductiveStatuses.Contains(status);
 
         internal readonly struct AssignmentWindow
         {
@@ -45,7 +41,7 @@ namespace TaskManagement.Services
             void Close(DateTime end, string? nextStatus)
             {
                 var endClamped = end < segStart ? segStart : end;
-                var seconds = WorkingOverlap(segStart, endClamped);
+                var seconds = Overlap(segStart, endClamped);
                 if (seconds > 0)
                 {
                     segments.Add(new EffortTimelineSegmentDto
@@ -89,7 +85,7 @@ namespace TaskManagement.Services
             return windows;
         }
 
-        // Raw overlap (no working-hours filter) — used only for assignment window intersection.
+        // Raw overlap (no working-hours filter) — used for all calculations.
         internal static long Overlap(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd)
         {
             var start = aStart > bStart ? aStart : bStart;
@@ -97,40 +93,11 @@ namespace TaskManagement.Services
             return (long)Math.Max(0, (end - start).TotalSeconds);
         }
 
-        // Office hours (default 10:00–19:00). Timestamps are stored as IST wall-clock
-        // (DateTimeKind.Unspecified via AppClock.Now), so no tz conversion is needed.
-        // Overridden at startup via Configure(WorkingHoursOptions) → appsettings "WorkingHours".
-        private static TimeSpan WorkStart = new TimeSpan(10, 0, 0);
-        private static TimeSpan WorkEnd   = new TimeSpan(19, 0, 0);
-
-        // Returns working-hour seconds of [start, end) clipped to a single calendar day.
-        internal static long WorkingOverlapForDay(DateTime start, DateTime end, DateTime day)
-        {
-            var dayWork0 = day.Date + WorkStart;
-            var dayWork1 = day.Date + WorkEnd;
-            var sliceStart = start > dayWork0 ? start : dayWork0;
-            var sliceEnd   = end   < dayWork1 ? end   : dayWork1;
-            return sliceEnd > sliceStart ? (long)(sliceEnd - sliceStart).TotalSeconds : 0;
-        }
-
-        // Returns total seconds of [start, end) that fall within office hours across all days.
-        internal static long WorkingOverlap(DateTime start, DateTime end)
+        // Returns total seconds of [start, end) — no office-hours clipping.
+        internal static long Overlap(DateTime start, DateTime end)
         {
             if (end <= start) return 0;
-            long total = 0;
-            var day = start.Date;
-            var lastDay = end.Date;
-            while (day <= lastDay)
-            {
-                var dayWork0 = day + WorkStart;
-                var dayWork1 = day + WorkEnd;
-                var sliceStart = start > dayWork0 ? start : dayWork0;
-                var sliceEnd   = end   < dayWork1 ? end   : dayWork1;
-                if (sliceEnd > sliceStart)
-                    total += (long)(sliceEnd - sliceStart).TotalSeconds;
-                day = day.AddDays(1);
-            }
-            return total;
+            return (long)(end - start).TotalSeconds;
         }
     }
 }

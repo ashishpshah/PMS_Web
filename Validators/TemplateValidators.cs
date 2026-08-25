@@ -60,8 +60,6 @@ namespace TaskManagement.Validators
                 .WithMessage("A default assignee must be selected for every item.");
             RuleFor(x => x.QaReviewerId).GreaterThan(0).When(x => x.QaReviewerId.HasValue)
                 .WithMessage("Invalid QA reviewer.");
-            RuleFor(x => x.DueDateOffsetDays).GreaterThanOrEqualTo(0)
-                .WithMessage("Due-date offset cannot be negative.");
             RuleForEach(x => x.Tags).OptionalText(50);
             RuleForEach(x => x.ChecklistItems).RequiredText(ValidationConstants.TitleMaxLength, 1);
         }

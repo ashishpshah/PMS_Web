@@ -260,7 +260,6 @@ namespace TaskManagement.Services
                         ProjectId = project.Id,
                         AssignedToId = assignee == 0 ? null : assignee,
                         CreatedById = creator,
-                        DueDate = ParseDate(GetString(t, "dueDate")),
                         EstimatedHours = GetDecimal(t, "estimatedHours"),
                         ActualHours = GetDecimal(t, "actualHours"),
                         Progress = status == "completed" ? 100 : 0,

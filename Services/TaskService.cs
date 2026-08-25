@@ -434,47 +434,57 @@ namespace TaskManagement.Services
             "new", "in-progress", "paused", "blocked", "under-review", "issues", "completed"
         };
 
-        // Status state machine: from → { to → ActualHoursExempt }. Each edge carries its own
-        // requirement for ActualHours, rather than deriving it from the target status alone.
-        private static readonly Dictionary<string, Dictionary<string, bool>> AllowedEdges = new(StringComparer.OrdinalIgnoreCase)
+        // Edge info for each allowed transition
+        private sealed class EdgeInfo
+        {
+            public bool IsActualHoursExempt { get; init; }
+            public bool IsProductive { get; init; }
+        }
+
+        // Status state machine: from → { to → EdgeInfo }. Each edge carries its own
+        // requirement for ActualHours and whether the transition is productive (effort-tracking).
+        private static readonly Dictionary<string, Dictionary<string, EdgeInfo>> AllowedEdges = new(StringComparer.OrdinalIgnoreCase)
         {
             ["new"] = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["in-progress"] = true,  // starting work — no prior hours to report
+                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = true, IsProductive = false },  // starting work
             },
             ["in-progress"] = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["paused"]       = true,  // pausing — hours are logged cumulatively on resume
-                ["blocked"]      = false, // reporting a blocker — must log hours worked before hitting it
-                ["under-review"] = false, // submitting for review — must log hours worked
+                ["paused"]       = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // pausing
+                ["blocked"]      = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // blocking
+                ["under-review"] = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // submitting for review
             },
             ["paused"] = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["in-progress"] = false, // resuming — logs hours spent while paused/investigating
+                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = true }, // resuming
             },
             ["blocked"] = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["in-progress"] = false, // unblocking — logs hours spent resolving the blocker
+                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = true }, // unblocking
             },
             ["under-review"] = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["completed"] = false, // QA approve — logs review hours
-                ["issues"]    = true,  // QA fail — no hours needed to reject
+                ["completed"] = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // QA approve
+                ["issues"]    = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // QA fail
             },
             ["issues"] = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["in-progress"] = false, // fixing issues — logs hours spent addressing them
+                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = true }, // fixing issues
             },
             ["completed"] = new(StringComparer.OrdinalIgnoreCase)
             {
-                ["in-progress"] = false, // reopen (manager only) — logs hours spent on the reopen work
+                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = false }, // reopen (manager only)
             },
         };
 
         // True when the given (from, to) edge doesn't require ActualHours. False (including for
         // an edge that doesn't exist) so callers still fail closed via the AllowedEdges lookup.
         private static bool IsActualHoursExempt(string from, string to) =>
-            AllowedEdges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var exempt) && exempt;
+            AllowedEdges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var info) && info.IsActualHoursExempt;
+
+        private static bool IsProductiveTransition(string from, string to) =>
+            AllowedEdges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var info) && info.IsProductive;
 
         // Derives the human-readable action name from a (fromStatus, toStatus) pair.
         private static string DeriveActionName(string from, string to) =>
@@ -780,7 +790,7 @@ namespace TaskManagement.Services
                         var segWinStart = s.StartAt > winStart ? s.StartAt : winStart;
                         var segWinEnd = s.EndAt < winEnd ? s.EndAt : winEnd;
                         if (segWinEnd <= segWinStart) continue;
-                        var clip = EffortHelpers.WorkingOverlap(segWinStart, segWinEnd);
+                        var clip = EffortHelpers.Overlap(segWinStart, segWinEnd);
                         if (clip <= 0) continue;
                         workingSecondsByUser.TryGetValue(uid, out var acc);
                         workingSecondsByUser[uid] = acc + clip;
@@ -828,31 +838,6 @@ namespace TaskManagement.Services
             if (!isAdmin) filterUserId = requestingUserId;
 
             var now = AppClock.Now;
-
-            // Overdue tasks: due date passed, not completed. Same convention as the
-            // existing client-side/DTO "isOverdue" check used elsewhere in the app.
-            var overdueQuery = _context.Tasks
-                .Where(t => t.DueDate.HasValue && t.DueDate.Value < now && t.Status != "completed");
-            if (filterUserId.HasValue)
-                overdueQuery = overdueQuery.Where(t => t.AssignedToId == filterUserId.Value || t.CreatedById == filterUserId.Value);
-
-            var overdueTasks = await overdueQuery
-                .OrderBy(t => t.DueDate)
-                .Take(20)
-                .Select(t => new { t.Id, t.Code, t.Title, t.Status, t.DueDate, t.AssignedToId, t.AssignedTo!.FullName })
-                .ToListAsync(ct);
-
-            var overdueDtos = overdueTasks.Select(t => new OverdueTaskDto
-            {
-                Id = t.Id,
-                Code = t.Code,
-                Title = t.Title,
-                Status = t.Status,
-                DueDate = t.DueDate!.Value,
-                DaysOverdue = (int)Math.Floor((now - t.DueDate.Value).TotalDays),
-                AssignedToId = t.AssignedToId,
-                AssignedToName = t.FullName
-            }).ToList();
 
             // Stalled projects: active project, no task status-history activity in the
             // last 3 days across any of its tasks. Current-state snapshot — no date-range param.
@@ -909,7 +894,7 @@ namespace TaskManagement.Services
             return new ApiResponse<AtRiskDto>
             {
                 Success = true,
-                Data = new AtRiskDto { OverdueTasks = overdueDtos, StalledProjects = stalledProjects }
+                Data = new AtRiskDto { StalledProjects = stalledProjects }
             };
         }
 
@@ -1451,7 +1436,7 @@ namespace TaskManagement.Services
                 .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
 
             var effort = ComputeEffort(task.CreatedAt, task.Status, statusRows, assignRows,
-                task.AssignedToId, userNames, AppClock.Now);
+                task.AssignedToId, userNames, AppClock.Now, task.EstimatedHours);
 
             return new ApiResponse<TaskEffortDto> { Success = true, Data = effort };
         }
@@ -1514,7 +1499,7 @@ namespace TaskManagement.Services
                     var segWinStart = s.StartAt > winStart ? s.StartAt : winStart;
                     var segWinEnd   = s.EndAt   < winEnd   ? s.EndAt   : winEnd;
                     if (segWinEnd <= segWinStart) continue;
-                    var clip = EffortHelpers.WorkingOverlap(segWinStart, segWinEnd);
+                    var clip = EffortHelpers.Overlap(segWinStart, segWinEnd);
                     if (clip <= 0) continue;
 
                     if (isProd)   totalProductive += clip;
@@ -1527,7 +1512,7 @@ namespace TaskManagement.Services
                         var intStart = segWinStart > w.Start ? segWinStart : w.Start;
                         var intEnd   = segWinEnd   < w.End   ? segWinEnd   : w.End;
                         if (intEnd <= intStart) continue;
-                        var ov = EffortHelpers.WorkingOverlap(intStart, intEnd);
+                        var ov = EffortHelpers.Overlap(intStart, intEnd);
                         if (ov <= 0) continue;
                         if (isProd)
                         {
@@ -1614,7 +1599,8 @@ namespace TaskManagement.Services
             IReadOnlyList<TaskAssignmentHistory> assignRows,
             int? currentAssigneeId,
             IReadOnlyDictionary<int, string> userNames,
-            DateTime now)
+            DateTime now,
+            decimal? estimatedHours = null)
         {
             // 1) Build status segments [StartAt, EndAt) tagged with the status held.
             var segments = new List<EffortTimelineSegmentDto>();
@@ -1625,7 +1611,7 @@ namespace TaskManagement.Services
             void Close(DateTime end, string nextStatus)
             {
                 var endClamped = end < segStart ? segStart : end;        // clamp skew
-                var seconds = EffortHelpers.WorkingOverlap(segStart, endClamped);
+                var seconds = EffortHelpers.Overlap(segStart, endClamped);
                 segments.Add(new EffortTimelineSegmentDto
                 {
                     Status = segStatus,
@@ -1696,7 +1682,7 @@ namespace TaskManagement.Services
                         var intStart = s.StartAt > win.Start ? s.StartAt : win.Start;
                         var intEnd   = s.EndAt   < win.End   ? s.EndAt   : win.End;
                         if (intEnd <= intStart) continue;
-                        var ov = EffortHelpers.WorkingOverlap(intStart, intEnd);
+                        var ov = EffortHelpers.Overlap(intStart, intEnd);
                         if (ov <= 0) continue;
                         if (IsProductiveStatus(s.Status)) uProductive += ov;
                     }
@@ -1738,6 +1724,7 @@ namespace TaskManagement.Services
                 UnderReviewSeconds = underReview,
                 OtherSeconds = other,
                 IsRunning = IsProductiveStatus(currentStatus),
+                EstimatedHours = estimatedHours,
                 ByStatus = byStatus,
                 ByUser = byUser,
                 Timeline = timeline

@@ -96,7 +96,7 @@ namespace TaskManagement.Services
                         var intStart = segWinStart > w.Start ? segWinStart : w.Start;
                         var intEnd   = segWinEnd   < w.End   ? segWinEnd   : w.End;
                         if (intEnd <= intStart) continue;
-                        var ov = EffortHelpers.WorkingOverlap(intStart, intEnd);
+                        var ov = EffortHelpers.Overlap(intStart, intEnd);
                         if (ov <= 0) continue;
 
                         if (isProd) Add(perUserProductive, w.UserId, ov);
@@ -313,7 +313,7 @@ namespace TaskManagement.Services
                         var intStart = segWinStart > w.Start ? segWinStart : w.Start;
                         var intEnd   = segWinEnd   < w.End   ? segWinEnd   : w.End;
                         if (intEnd <= intStart) continue;
-                        var ov = EffortHelpers.WorkingOverlap(intStart, intEnd);
+                        var ov = EffortHelpers.Overlap(intStart, intEnd);
                         if (ov <= 0) continue;
 
                         switch (statusLower)
@@ -435,7 +435,11 @@ namespace TaskManagement.Services
                         {
                             if (day >= winStart && day <= winEnd)
                             {
-                                var ov = EffortHelpers.WorkingOverlapForDay(intStart, intEnd, day);
+                                var dayStart = day;
+                                var dayEnd = day.AddDays(1);
+                                var segStart = intStart > dayStart ? intStart : dayStart;
+                                var segEnd = intEnd < dayEnd ? intEnd : dayEnd;
+                                var ov = EffortHelpers.Overlap(segStart, segEnd);
                                 if (ov > 0)
                                 {
                                     switch (statusLower)
@@ -617,7 +621,7 @@ namespace TaskManagement.Services
                         var intEnd   = segWinEnd   < w.End   ? segWinEnd   : w.End;
                         if (intEnd <= intStart) continue;
 
-                        var ov = EffortHelpers.WorkingOverlap(intStart, intEnd);
+                        var ov = EffortHelpers.Overlap(intStart, intEnd);
                         if (ov <= 0) continue;
 
                         // ── by User ──
@@ -831,7 +835,11 @@ namespace TaskManagement.Services
                                                    && dc.CoveredTaskIds.Contains(t.Id);
                                 if (!diaryCovered)
                                 {
-                                    var ov = EffortHelpers.WorkingOverlapForDay(intStart, intEnd, day);
+                                    var dayStart = day;
+                                    var dayEnd = day.AddDays(1);
+                                    var segStart = intStart > dayStart ? intStart : dayStart;
+                                    var segEnd = intEnd < dayEnd ? intEnd : dayEnd;
+                                    var ov = EffortHelpers.Overlap(segStart, segEnd);
                                     if (ov > 0) AddDay(dayTaskProdSeconds, day, ov);
                                 }
                             }

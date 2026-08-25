@@ -199,7 +199,6 @@ namespace TaskManagement.Services
                     Priority          = i.Priority,
                     DefaultAssigneeId = i.DefaultAssigneeId,
                     QaReviewerId      = i.QaReviewerId,
-                    DueDateOffsetDays = i.DueDateOffsetDays,
                     Tags              = i.Tags.Select(t => t.Tag).ToList(),
                     ChecklistItems    = i.Checklists.OrderBy(c => c.Position).Select(c => c.Text).ToList(),
                     DependsOnPositions= i.Dependencies.Select(d => d.DependsOnItem!.Position).ToList(),
@@ -305,7 +304,6 @@ namespace TaskManagement.Services
                     QaAssigneeId         = item.QaReviewerId,
                     RequiresQA           = item.QaReviewerId.HasValue,
                     EstimatedHours       = item.EstimatedHours,
-                    DueDate              = generateDate.AddDays(item.DueDateOffsetDays),
                     CreatedById          = userId ?? assigneeId,
                     CreatedAt            = AppClock.Now,
                     SourceTemplateItemId = item.Id,
@@ -550,7 +548,6 @@ namespace TaskManagement.Services
                     Priority          = dto.Priority,
                     DefaultAssigneeId = dto.DefaultAssigneeId,
                     QaReviewerId      = dto.QaReviewerId,
-                    DueDateOffsetDays = dto.DueDateOffsetDays,
                 };
                 _db.TaskTemplateItems.Add(item);
                 pairs.Add((dto, item));
@@ -665,7 +662,6 @@ namespace TaskManagement.Services
                 DefaultAssigneeName = i.DefaultAssignee?.FullName,
                 QaReviewerId        = i.QaReviewerId,
                 QaReviewerName      = i.QaReviewer?.FullName,
-                DueDateOffsetDays   = i.DueDateOffsetDays,
                 Tags                = i.Tags.Select(t => t.Tag).ToList(),
                 ChecklistItems      = i.Checklists.OrderBy(c => c.Position).Select(c => c.Text).ToList(),
                 DependsOnPositions  = i.Dependencies.Select(d => d.DependsOnItem?.Position ?? 0).ToList(),

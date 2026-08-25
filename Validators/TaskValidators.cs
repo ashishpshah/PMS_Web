@@ -25,7 +25,7 @@ namespace TaskManagement.Validators
             // entirely previously slipped through — closed here with NotNull.
             RuleFor(x => x.EstimatedHours).NotNull().WithMessage("Estimated hours are required.");
             RuleFor(x => x.EstimatedHours).MustBeValidHours();
-            RuleFor(x => x.ActualHours).MustBeValidHours();
+            //RuleFor(x => x.ActualHours).MustBeValidHours();
             RuleFor(x => x.Module).OptionalText(100);
             RuleForEach(x => x.Tags).OptionalText(50);
             RuleFor(x => x.ParentTaskId).GreaterThan(0).When(x => x.ParentTaskId.HasValue)
