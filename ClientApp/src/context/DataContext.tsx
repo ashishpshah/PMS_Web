@@ -113,8 +113,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setUsers(usersData || []);
       setAssignableUsers(assignableData || []);
       setActivities(activitiesData || []);
-    } catch {
-      showError('Some data failed to load. Please refresh to try again.');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Some data failed to load. Please refresh to try again.');
       setProjects([]);
       setTasks([]);
       setUsers([]);
@@ -137,92 +137,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, authLoading, isSystemAdmin, isAdmin]);
 
-  // Check for upcoming task due dates and generate in-app notifications
+  // No more due date reminders — due dates removed
   useEffect(() => {
     if (!currentUser || tasks.length === 0) return;
 
     const checkReminders = () => {
       setNotifications(currentNotifications => {
-        const today = new Date();
-        const todayStr = today.toDateString();
-        const twoDaysFromNow = new Date();
-        twoDaysFromNow.setDate(today.getDate() + 2);
-
-        const newNotifications: Notification[] = [];
-
-        tasks.forEach(task => {
-          if (task.status === 'completed') return;
-          if (task.assigneeId !== currentUser.id && currentUser.role !== 'admin') return;
-          if (!task.dueDate) return;
-
-          const dueDate = new Date(task.dueDate);
-          const link = `/tasks?id=${task.id}`;
-
-          if (dueDate > today && dueDate <= twoDaysFromNow) {
-            const existing = currentNotifications.find(n =>
-              n.userId === currentUser.id &&
-              n.type === 'reminder' &&
-              n.link === link &&
-              !n.message.includes('overdue') &&
-              new Date(n.timestamp).toDateString() === todayStr
-            );
-
-            if (!existing) {
-              const newNotif: Notification = {
-                id: nextNotifId.current++,
-                userId: currentUser.id,
-                title: 'Upcoming Deadline',
-                message: `Task "${task.title}" is due soon (${task.dueDate})`,
-                type: 'reminder',
-                read: false,
-                timestamp: new Date().toISOString(),
-                link,
-              };
-              newNotifications.push(newNotif);
-
-              const alertKey = `${task.id}`;
-              if (!shownAlerts.current.has(alertKey)) {
-                setActiveAlert(newNotif);
-                shownAlerts.current.add(alertKey);
-                playNotificationSound();
-              }
-            }
-          }
-
-          if (dueDate < today) {
-            const existing = currentNotifications.find(n =>
-              n.userId === currentUser.id &&
-              n.type === 'reminder' &&
-              n.message.includes('overdue') &&
-              n.link === link &&
-              new Date(n.timestamp).toDateString() === todayStr
-            );
-
-            if (!existing) {
-              const newNotif: Notification = {
-                id: nextNotifId.current++,
-                userId: currentUser.id,
-                title: 'TASK OVERDUE',
-                message: `Task "${task.title}" is past its due date (${task.dueDate})`,
-                type: 'reminder',
-                read: false,
-                timestamp: new Date().toISOString(),
-                link,
-              };
-              newNotifications.push(newNotif);
-
-              const alertKey = `${task.id}-overdue`;
-              if (!shownAlerts.current.has(alertKey)) {
-                setActiveAlert(newNotif);
-                shownAlerts.current.add(alertKey);
-                playNotificationSound();
-              }
-            }
-          }
-        });
-
-        if (newNotifications.length === 0) return currentNotifications;
-        return [...newNotifications, ...currentNotifications];
+        // Placeholder for future reminder logic (e.g., stalled tasks, upcoming reviews)
+        return currentNotifications;
       });
     };
 
