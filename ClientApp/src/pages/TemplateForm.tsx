@@ -190,7 +190,7 @@ function ItemEditor({ item, index, total, userOptions, dependencyOptions, onChan
         <CardContent className="pt-0 px-4 pb-4 space-y-4 border-t border-gray-50 dark:border-gray-800">
           {/* Title */}
           <div>
-            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Title *</label>
+            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Title <span className="text-red-500">*</span></label>
             <input
               type="text"
               value={item.title}
@@ -214,7 +214,7 @@ function ItemEditor({ item, index, total, userOptions, dependencyOptions, onChan
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {/* Estimated hours */}
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Est. Hours</label>
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Est. Hours <span className="text-red-500">*</span></label>
               <input
                 type="number"
                 min={0}
@@ -227,7 +227,7 @@ function ItemEditor({ item, index, total, userOptions, dependencyOptions, onChan
 
             {/* Priority */}
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Priority</label>
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Priority <span className="text-red-500">*</span></label>
               <VSelect
                 size="sm"
                 options={PRIORITY_OPTIONS}
@@ -241,7 +241,7 @@ function ItemEditor({ item, index, total, userOptions, dependencyOptions, onChan
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Assignee (single, required) */}
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Assignee *</label>
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Assignee <span className="text-red-500">*</span></label>
               <VSelect
                 size="sm"
                 options={userOptions}
@@ -571,7 +571,7 @@ export default function TemplateForm() {
               <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-400">Basic Info</h3>
 
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Template Name *</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Template Name <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={form.name}
@@ -631,7 +631,7 @@ export default function TemplateForm() {
               <h3 className="text-[11px] font-black uppercase tracking-widest text-gray-400">Recurrence</h3>
 
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Frequency</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Frequency <span className="text-red-500">*</span></label>
                 <VSelect
                   options={RECURRENCE_OPTIONS}
                   value={RECURRENCE_OPTIONS.find(o => o.value === form.recurrenceType) ?? null}
@@ -641,7 +641,7 @@ export default function TemplateForm() {
 
               {form.recurrenceType === 'weekly' && (
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Day of Week</label>
+                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Day of Week <span className="text-red-500">*</span></label>
                   <VSelect
                     options={DAY_OF_WEEK_OPTIONS}
                     value={DAY_OF_WEEK_OPTIONS.find(o => o.value === form.dayOfWeek) ?? DAY_OF_WEEK_OPTIONS[1]}
@@ -652,7 +652,7 @@ export default function TemplateForm() {
 
               {form.recurrenceType === 'monthly' && (
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Days of Month</label>
+                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Days of Month <span className="text-red-500">*</span></label>
                   <VSelect
                     isMulti
                     options={DAY_OF_MONTH_OPTIONS}
@@ -666,7 +666,7 @@ export default function TemplateForm() {
 
               {form.recurrenceType === 'custom' && (
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Interval (days)</label>
+                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Interval (days) <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     min={1}
@@ -679,7 +679,7 @@ export default function TemplateForm() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Start Date *</label>
+                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-1">Start Date <span className="text-red-500">*</span></label>
                   <input
                     type="date"
                     value={form.startDate}

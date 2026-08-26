@@ -137,6 +137,7 @@ builder.Services.AddScoped<IWorkDiaryService, WorkDiaryService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
+builder.Services.AddSingleton<ITaskStatusTransitionProvider, TaskStatusTransitionProvider>();
 builder.Services.AddHostedService<TaskTemplateSchedulerService>();
 builder.Services.AddHostedService<OtpCleanupService>();
 builder.Services.AddSingleton<IOnlineUserTracker, OnlineUserTracker>();

@@ -51,6 +51,7 @@ namespace TaskManagement.Controllers
             if (userId <= 0)
                 return Unauthorized(new ApiResponse<ProjectDto> { Success = false, Message = "Unable to determine current user" });
             var result = await _projectService.CreateProjectAsync(projectDto, userId);
+            if (!result.Success) return BadRequest(result);
             return CreatedAtAction(nameof(GetById), new { id = result.Data?.Id }, result);
         }
 
@@ -63,6 +64,20 @@ namespace TaskManagement.Controllers
             if (!result.Success)
                 return result.Message == "Project not found" ? NotFound(result) : BadRequest(result);
             return Ok(result);
+        }
+
+        // Live "as-you-type" duplicate-name check used by the create/edit modal — always
+        // Success = true, the boolean Available is the actual signal (mirrors
+        // AuthController.CheckAvailability). A conflict only counts against another project that
+        // isn't already Completed.
+        [HttpGet("check-name")]
+        public async Task<ActionResult<ApiResponse<ProjectNameAvailabilityDto>>> CheckName(
+            [FromQuery] string name, [FromQuery] int? excludeProjectId)
+        {
+            if (!await _authService.CanViewAsync("/projects"))
+                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view projects" });
+            var available = await _projectService.IsProjectNameAvailableAsync(name, excludeProjectId);
+            return Ok(new ApiResponse<ProjectNameAvailabilityDto> { Success = true, Data = new ProjectNameAvailabilityDto { Available = available } });
         }
 
         [HttpDelete("{id}")]

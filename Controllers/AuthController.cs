@@ -236,6 +236,33 @@ namespace TaskManagement.Controllers
             return Ok(new ApiResponse<bool> { Success = true, Message = "Password updated successfully.", Data = true });
         }
 
+        // Authenticated self-service change — no OTP round-trip, since the caller already
+        // proves identity via their current password (checked below) plus a valid JWT.
+        [Authorize]
+        [HttpPost("change-password")]
+        public async Task<ActionResult<ApiResponse<bool>>> ChangePassword([FromBody] ChangePasswordDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new ApiResponse<bool> { Success = false, Message = "Invalid token" });
+
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null || !user.IsActive)
+                return BadRequest(new ApiResponse<bool> { Success = false, Message = "Account not found or inactive." });
+
+            if (!PasswordHasher.VerifyPassword(dto.CurrentPassword, user.PasswordHash))
+                return BadRequest(new ApiResponse<bool> { Success = false, Message = "Current password is incorrect." });
+
+            user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
+            user.UpdatedAt    = AppClock.Now;
+            await _context.SaveChangesAsync();
+
+            // Force other sessions/devices to re-authenticate with the new password.
+            await _authService.RevokeAllAsync(userId);
+
+            return Ok(new ApiResponse<bool> { Success = true, Message = "Password changed successfully.", Data = true });
+        }
+
         [Authorize]
         [HttpGet("check-availability")]
         public async Task<ActionResult<ApiResponse<AvailabilityDto>>> CheckAvailability(

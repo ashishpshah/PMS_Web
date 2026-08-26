@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Project, Task, User, Activity, Notification, Status, AddBlockItem } from '../types';
+import { Project, Task, User, Activity, Notification, Status, AddBlockItem, StatusTransitionGraph } from '../types';
 import { useAuth } from './AuthContext';
 import { projectService } from '../services/project.service';
 import { taskService } from '../services/task.service';
@@ -14,6 +14,7 @@ interface DataContextType {
   assignableUsers: User[];
   activities: Activity[];
   notifications: Notification[];
+  statusTransitions: StatusTransitionGraph;
   loading: boolean;
   error: string | null;
   activeAlert: Notification | null;
@@ -69,6 +70,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [assignableUsers, setAssignableUsers] = useState<User[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [statusTransitions, setStatusTransitions] = useState<StatusTransitionGraph>({});
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,11 +103,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const [projectsData, usersData, assignableData, activitiesData] = await Promise.all([
+      const [projectsData, usersData, assignableData, activitiesData, statusTransitionsData] = await Promise.all([
         projectService.getAll().catch(() => []),
         userService.getAll().catch(() => []),
         userService.getAssignable().catch(() => []),
         activityService.getAll().catch(() => []),
+        taskService.getStatusTransitions().catch(() => ({})),
       ]);
 
       setProjects(projectsData || []);
@@ -113,6 +116,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setUsers(usersData || []);
       setAssignableUsers(assignableData || []);
       setActivities(activitiesData || []);
+      setStatusTransitions(statusTransitionsData || {});
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Some data failed to load. Please refresh to try again.');
       setProjects([]);
@@ -120,6 +124,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setUsers([]);
       setAssignableUsers([]);
       setActivities([]);
+      setStatusTransitions({});
     } finally {
       setLoading(false);
     }
@@ -542,7 +547,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DataContext.Provider value={{
-      projects, tasks, users, assignableUsers, activities, notifications, loading, error,
+      projects, tasks, users, assignableUsers, activities, statusTransitions, notifications, loading, error,
       activeAlert, dismissAlert,
       addProject, updateProject, deleteProject, reassignProject, updateProjectMembers, removeMemberFromProject,
       addTask, updateTask, deleteTask, addTaskComment,

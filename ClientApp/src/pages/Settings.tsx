@@ -84,17 +84,11 @@ export default function Settings() {
     }
     setSavingPassword(true);
     try {
-      // Verify current password by attempting login
-      await apiRequest<unknown>('/auth/login', {
+      await apiRequest<unknown>('/auth/change-password', {
         method: 'POST',
-        body: JSON.stringify({ email: user.email, password: currentPassword }),
+        body: JSON.stringify({ currentPassword, newPassword }),
       });
-      // Current password confirmed — set new one
-      await apiRequest<unknown>('/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ email: user.email, newPassword }),
-      });
-      showSuccess('Password changed successfully');
+      showSuccess('Password changed successfully. Please sign in again next time you visit.');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -164,7 +158,7 @@ export default function Settings() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Full Name</label>
+                        <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Full Name <span className="text-red-500">*</span></label>
                         <input
                           type="text"
                           value={profileName}
@@ -173,7 +167,7 @@ export default function Settings() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Email</label>
+                        <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Email <span className="text-red-500">*</span></label>
                         <input
                           type="email"
                           value={profileEmail}
@@ -250,7 +244,7 @@ export default function Settings() {
                         { label: 'Confirm Password', value: confirmPassword, set: setConfirmPassword, show: showConfirm, toggle: () => setShowConfirm(v => !v) },
                       ].map(field => (
                         <div key={field.label} className="space-y-1">
-                          <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">{field.label}</label>
+                          <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">{field.label} <span className="text-red-500">*</span></label>
                           <div className="relative">
                             <input
                               type={field.show ? 'text' : 'password'}

@@ -69,6 +69,7 @@ namespace TaskManagement.Controllers
             if (userId <= 0)
                 return Unauthorized(new ApiResponse<TaskDto> { Success = false, Message = "Unable to determine current user" });
             var result = await _taskService.CreateTaskAsync(createTaskDto, userId);
+            if (!result.Success) return BadRequest(result);
             return CreatedAtAction(nameof(GetById), new { id = result.Data?.Id }, result);
         }
 
@@ -90,6 +91,33 @@ namespace TaskManagement.Controllers
             if (!result.Success)
                 return result.ErrorCode == "FORBIDDEN" ? StatusCode(403, result) : BadRequest(result);
             return Ok(result);
+        }
+
+        // Live "as-you-type" duplicate-title check used by the create/edit modal — always
+        // Success = true, the boolean Available is the actual signal (mirrors
+        // AuthController.CheckAvailability). Scoped per-project; a conflict only counts against
+        // another task in the same project that isn't already Completed.
+        [HttpGet("check-title")]
+        public async Task<ActionResult<ApiResponse<TaskTitleAvailabilityDto>>> CheckTitle(
+            [FromQuery] string title, [FromQuery] int projectId, [FromQuery] int? excludeTaskId)
+        {
+            if (!await _authService.CanViewAsync("/tasks"))
+                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view tasks" });
+            var available = await _taskService.IsTaskTitleAvailableAsync(title, projectId, excludeTaskId);
+            return Ok(new ApiResponse<TaskTitleAvailabilityDto> { Success = true, Data = new TaskTitleAvailabilityDto { Available = available } });
+        }
+
+        // Exposes the config-driven status transition graph (appsettings.json's
+        // TaskStatusTransitions, via Services/TaskStatusTransitionProvider.cs) so the frontend
+        // can drive its Kanban/status-actions UI from the same source of truth this controller's
+        // own status-change endpoints enforce, instead of maintaining a separate hardcoded copy.
+        [HttpGet("status-transitions")]
+        public async Task<ActionResult<ApiResponse<Dictionary<string, Dictionary<string, TaskStatusEdgeDto>>>>> GetStatusTransitions()
+        {
+            if (!await _authService.CanViewAsync("/tasks"))
+                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view tasks" });
+            var graph = _taskService.GetStatusTransitions();
+            return Ok(new ApiResponse<Dictionary<string, Dictionary<string, TaskStatusEdgeDto>>> { Success = true, Data = graph });
         }
 
         [HttpDelete("{id}")]

@@ -490,7 +490,7 @@ const handleSavePermissions = async () => {
               </h3>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Role Name</label>
+                  <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Role Name <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={roleForm.name}
@@ -511,7 +511,7 @@ const handleSavePermissions = async () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Level <span className="normal-case font-normal text-gray-400">(1=highest)</span></label>
+                    <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Level <span className="text-red-500">*</span> <span className="normal-case font-normal text-gray-400">(1=highest)</span></label>
                     <input
                       type="number"
                       min={0}

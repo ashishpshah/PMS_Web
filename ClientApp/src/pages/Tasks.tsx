@@ -12,7 +12,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Task, Status, Priority, Attachment, STATUS_LABELS, STATUS_BADGE_VARIANT, TASK_STATUSES, ReasonTag, REASON_TAGS, BLOCK_REASON_TAGS, AddBlockItem, BLOCK_CATEGORIES } from '../types';
-import { cn, formatDateTime, toInputDate, toHHMM, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, isActualHoursExempt, getAllowedNextStatuses } from '../lib/utils';
+import { cn, formatDateTime, toInputDate, toHHMM, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, requiresActualHours } from '../lib/utils';
 import { TaskAttachmentsPanel } from '../components/ui/TaskAttachmentsPanel';
 import { DateInput } from '../components/ui/DateInput';
 import { TimeInput } from '../components/ui/TimeInput';
@@ -28,6 +28,8 @@ import { useSweetAlert } from '../context/SweetAlertContext';
 import { showSuccess, showError } from '../lib/toast';
 import { VSelect, SelectOption } from '../components/forms/VSelect';
 import { useDebounce } from '../hooks';
+import { useTaskTitleAvailability } from '../hooks/useTaskTitleAvailability';
+import { AvailabilityHint } from '../components/ui/AvailabilityHint';
 import { exportTasks } from '../lib/importExport';
 
 const PRIORITY_OPTIONS: SelectOption[] = [
@@ -391,7 +393,7 @@ function TaskCompletionModal({ task, onClose }: TaskCompletionModalProps) {
 }
 
 export default function Tasks() {
-  const { projects, users, addTask, updateTask, deleteTask, addActivity, addChecklistItem, toggleChecklistItem, updateChecklistItem, deleteChecklistItem, markAllChecklistComplete, startTask, changeTaskStatus, reassignTask, toggleTaskCondition, addTaskIssueEntry, resolveTaskIssueEntry, addTaskReviewIssue, resolveTaskReviewIssue, completeReview } = useData();
+  const { projects, users, statusTransitions, addTask, updateTask, deleteTask, addActivity, addChecklistItem, toggleChecklistItem, updateChecklistItem, deleteChecklistItem, markAllChecklistComplete, startTask, changeTaskStatus, reassignTask, toggleTaskCondition, addTaskIssueEntry, resolveTaskIssueEntry, addTaskReviewIssue, resolveTaskReviewIssue, completeReview } = useData();
   const { user: currentUser, isAdmin } = useAuth();
   const { canCreate: canCreateTask, canUpdate: canUpdateTask, canDelete: canDeleteTask } = usePermissions();
   const { confirmAlert } = useSweetAlert();
@@ -407,6 +409,7 @@ export default function Tasks() {
   const [newTaskChecklist, setNewTaskChecklist] = useState<string[]>([]);
   const [newChecklistInput, setNewChecklistInput] = useState('');
   const [modalEstHours, setModalEstHours] = useState('');
+  const [formTitle, setFormTitle] = useState('');
   const [modalParentTaskId, setModalParentTaskId] = useState<number | ''>('');
   const [modalProjectId, setModalProjectId] = useState<number | ''>('');
   const [modalQaAssigneeId, setModalQaAssigneeId] = useState<number | ''>('');
@@ -505,6 +508,7 @@ export default function Tasks() {
       setModalParentTaskId(parentId);
       setModalProjectId(parent.projectId);
       setModalEstHours('01:00');
+      setFormTitle('');
       setIsModalOpen(true);
       const next = new URLSearchParams(searchParams);
       next.delete('newLinkedFrom');
@@ -728,6 +732,7 @@ export default function Tasks() {
       setModalProjectId(task.projectId);
       setModalModule(task.module ?? '');
       setModalPriority(task.priority || 'medium');
+      setFormTitle(task.title);
     } else {
       setEditingTask(null);
       setAttachments([]);
@@ -737,6 +742,7 @@ export default function Tasks() {
       setModalQaAssigneeId('');
       setModalModule('');
       setModalPriority('medium');
+      setFormTitle('');
     }
     setTagInput('');
     setNewTaskChecklist([]);
@@ -766,6 +772,16 @@ export default function Tasks() {
       .finally(() => { if (!cancelled) setHistLoading(false); });
     return () => { cancelled = true; };
   }, [editingTask?.id, isModalOpen]);
+
+  // Task title uniqueness is per-project — when editing, the project is fixed (read-only in the
+  // form, see the Project field below); when creating, it tracks whatever the Project dropdown
+  // currently holds. Same fallback expression the Project/Module/Assignee fields already use.
+  const activeProjectIdForCheck = modalProjectId !== '' ? Number(modalProjectId) : (editingTask?.projectId ?? projects[0]?.id);
+  const titleAvail = useTaskTitleAvailability(formTitle, {
+    enabled: isModalOpen && formTitle.trim().length > 0 && !!activeProjectIdForCheck,
+    projectId: activeProjectIdForCheck,
+    excludeTaskId: editingTask?.id,
+  });
 
   // ── tag helpers ───────────────────────────────────────────────────────────
   const handleAddTag = (e: React.KeyboardEvent) => {
@@ -815,10 +831,15 @@ export default function Tasks() {
       return;
     }
 
+    if (titleAvail === 'taken') {
+      showError('A task with this title already exists in this project and is still active. Choose a different title, or reuse it once that task is completed.');
+      return;
+    }
+
     const taskData: Task = {
       id:             editingTask?.id ?? 0,
       projectId:      Number(formData.get('projectId')),
-      title:          formData.get('title') as string,
+      title:          formTitle.trim(),
       description:    formData.get('description') as string,
       status:         editingTask?.status || 'new',
       // Defaults when null/empty: Priority→medium, Est→1h, Act→0h
@@ -857,8 +878,10 @@ export default function Tasks() {
 
 
   // ── move task to next stage (from Kanban) ─────────────────────────────────
-  // Uses isActualHoursExempt (mirrors backend AllowedEdges' per-edge ActualHoursExempt).
-  // 'blocked' is intentionally never exempt and is handled via its own modal below.
+  // Uses requiresActualHours against the fetched status-transition graph (DataContext's
+  // statusTransitions — backed by appsettings.json's TaskStatusTransitions, see
+  // Services/TaskStatusTransitionProvider.cs). 'blocked' is intentionally always treated as
+  // hours-required here and is handled via its own modal below.
   // Returns whether the move succeeded, so callers (e.g. the pending-hours modal) know
   // whether it's safe to close/reset their own state, instead of always doing so.
   const commitMove = async (task: Task, newStatus: Status, actualHours?: number): Promise<boolean> => {
@@ -884,8 +907,8 @@ export default function Tasks() {
       return;
     }
     // Hours-required transitions — open masked hours-spent modal instead of window.prompt
-    const exempt = isActualHoursExempt(task.status, newStatus);
-    if (!exempt) {
+    const needsHours = requiresActualHours(statusTransitions, task.status, newStatus);
+    if (needsHours) {
       setPendingHoursMove({ task, status: newStatus });
       return;
     }
@@ -2187,7 +2210,7 @@ export default function Tasks() {
                       <div className={cn(editTab !== 'details' && 'hidden', 'space-y-4')}>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Project</label>
+                            <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Project <span className="text-red-500">*</span></label>
                             {editingTask ? (
                               <div className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg text-[13px] text-gray-500 dark:text-gray-400 cursor-not-allowed">
                                 {projects.find(p => p.id === editingTask.projectId)?.name ?? '—'}
@@ -2271,11 +2294,12 @@ export default function Tasks() {
                           </div>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Task Title</label>
-                          <input name="title" required defaultValue={editingTask?.title} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px]" />
+                          <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Task Title <span className="text-red-500">*</span></label>
+                          <input name="title" required value={formTitle} onChange={e => setFormTitle(e.target.value)} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px]" />
+                          <AvailabilityHint state={titleAvail} label="Task title" />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Description</label>
+                          <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Description <span className="text-red-500">*</span></label>
                           <textarea name="description" rows={3} required defaultValue={editingTask?.description} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px]" />
                         </div>
                         <div className="grid grid-cols-3 gap-4">
@@ -2785,7 +2809,7 @@ export default function Tasks() {
 
                   {newAssigneeId !== reassigningTask.assigneeId ? (
                     <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-                      <label className="block text-[10px] font-black uppercase text-amber-600 tracking-widest ml-1">Reason for Reassignment</label>
+                      <label className="block text-[10px] font-black uppercase text-amber-600 tracking-widest ml-1">Reason for Reassignment <span className="text-red-500">*</span></label>
                       <VSelect
                         options={(reassigningTask.isBlocked ? BLOCK_REASON_TAGS : REASON_TAGS).map((tag): SelectOption => ({ value: tag, label: tag }))}
                         value={reassignmentReason ? { value: reassignmentReason, label: reassignmentReason } : null}
@@ -3006,7 +3030,7 @@ function BlockItemsModal({ taskTitle, onConfirm, onClose }: {
               <Plus size={11} /> Add item
             </button>
             <div className="pt-1 space-y-1.5">
-              <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">Hours Spent (before blocking)</label>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">Hours Spent (before blocking) <span className="text-red-500">*</span></label>
               <TimeInput
                 value={hoursInput}
                 onChange={setHoursInput}
@@ -3079,7 +3103,7 @@ function HoursPromptModal({ taskTitle, statusLabel, onConfirm, onClose }: {
         <CardContent className="p-6">
           <h4 className="text-[14px] font-black text-gray-900 dark:text-white uppercase italic tracking-tight mb-4">{taskTitle}</h4>
           <div className="space-y-2">
-            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Hours (HH:MM)</label>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Hours (HH:MM) <span className="text-red-500">*</span></label>
             <TimeInput
               value={hoursInput}
               onChange={setHoursInput}

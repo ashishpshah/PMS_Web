@@ -516,25 +516,25 @@ export default function Users() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">First Name</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">First Name <span className="text-red-500">*</span></label>
                 <input name="firstName" type="text" defaultValue={editingUser?.firstName} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="John" />
                 {(formErrors.firstName || serverErrors.firstname) && <p className="text-[11px] text-red-500 mt-1">{formErrors.firstName || serverErrors.firstname}</p>}
               </div>
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Last Name</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Last Name <span className="text-red-500">*</span></label>
                 <input name="lastName" type="text" defaultValue={editingUser?.lastName} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Doe" />
                 {(formErrors.lastName || serverErrors.lastname) && <p className="text-[11px] text-red-500 mt-1">{formErrors.lastName || serverErrors.lastname}</p>}
               </div>
             </div>
             {!editingUser && (
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Password</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Password <span className="text-red-500">*</span></label>
                 <input name="password" type="password" autoComplete="new-password" className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="At least 6 characters" />
                 {(formErrors.password || serverErrors.password) && <p className="text-[11px] text-red-500 mt-1">{formErrors.password || serverErrors.password}</p>}
               </div>
             )}
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Email Address</label>
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Email Address <span className="text-red-500">*</span></label>
               <input name="email" type="email" value={emailValue} onChange={e => setEmailValue(e.target.value)} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="john@example.com" />
               {(formErrors.email || serverErrors.email) ? <p className="text-[11px] text-red-500 mt-1">{formErrors.email || serverErrors.email}</p> : <AvailabilityHint state={emailAvail} label="Email" />}
             </div>
@@ -544,7 +544,7 @@ export default function Users() {
               {(formErrors.contactNo || serverErrors.contactno) && <p className="text-[11px] text-red-500 mt-1">{formErrors.contactNo || serverErrors.contactno}</p>}
             </div>
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Role</label>
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Role <span className="text-red-500">*</span></label>
               {(() => {
                 const roleOptions: SelectOption[] = roles
                   .filter(r => r.id !== 1 || editingUser?.roleId === 1)

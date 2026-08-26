@@ -69,6 +69,27 @@ namespace TaskManagement.Services
         Task<ApiResponse<AttachmentDto>> UploadAttachmentAsync(int taskId, IFormFile file, int userId);
         Task<ApiResponse<bool>> DeleteAttachmentAsync(int taskId, int attachmentId, int userId, bool isAdmin);
         Task<Attachment?> GetAttachmentEntityAsync(int attachmentId);
+
+        Task<bool> IsTaskTitleAvailableAsync(string title, int projectId, int? excludeTaskId = null);
+
+        // Exposes the config-driven transition graph (Services/TaskStatusTransitionProvider.cs)
+        // so the frontend can fetch the same source of truth this service enforces internally,
+        // instead of maintaining its own separate hardcoded copy.
+        Dictionary<string, Dictionary<string, TaskStatusEdgeDto>> GetStatusTransitions();
+    }
+
+    // Single-purpose response DTO for the status-transitions probe endpoint — same colocation
+    // convention as ProjectNameAvailabilityDto/TaskTitleAvailabilityDto above.
+    public class TaskStatusEdgeDto
+    {
+        public bool RequiresActualHours { get; set; }
+    }
+
+    // Single-purpose probe response for the live "check-title" endpoint — mirrors AvailabilityDto's
+    // role in Services/AuthService.cs. No AutoMapper mapping, so it lives here, not GeneralDtos.cs.
+    public class TaskTitleAvailabilityDto
+    {
+        public bool Available { get; set; }
     }
 
     public class TaskService : ITaskService
@@ -77,13 +98,15 @@ namespace TaskManagement.Services
         private readonly IMapper _mapper;
         private readonly INotificationService _notifications;
         private readonly IWebHostEnvironment _env;
+        private readonly ITaskStatusTransitionProvider _transitions;
 
-        public TaskService(PMSDbContext context, IMapper mapper, INotificationService notifications, IWebHostEnvironment env)
+        public TaskService(PMSDbContext context, IMapper mapper, INotificationService notifications, IWebHostEnvironment env, ITaskStatusTransitionProvider transitions)
         {
             _context = context;
             _mapper = mapper;
             _notifications = notifications;
             _env = env;
+            _transitions = transitions;
         }
 
         public async Task<ApiResponse<List<TaskDto>>> GetAllTasksAsync(string? status, string? priority, int? projectId, int? assigneeId = null, string? search = null, int? createdById = null, int page = 1, int pageSize = 100, CancellationToken ct = default)
@@ -327,6 +350,38 @@ namespace TaskManagement.Services
             return new ApiResponse<TaskDto> { Success = true, Data = dto };
         }
 
+        // Two tasks in the same project sharing a Title only conflict while the earlier one is
+        // still active work — a "completed" task's title is free to reuse (e.g. a recurring
+        // "Sprint Retrospective" task each sprint). Used by both the live check-title endpoint
+        // and the Create/Update safety net below, so the query is defined exactly once.
+        private async Task<bool> TaskTitleConflictsAsync(string? title, int projectId, int? excludeTaskId)
+        {
+            var trimmed = (title ?? string.Empty).Trim();
+            if (trimmed.Length == 0) return false; // presence/length is FluentValidation's job
+            var titleLower = trimmed.ToLower();
+            return await _context.Tasks.AnyAsync(t =>
+                t.ProjectId == projectId &&
+                t.Title.ToLower() == titleLower &&
+                t.Status.ToLower() != "completed" &&
+                (!excludeTaskId.HasValue || t.Id != excludeTaskId.Value));
+        }
+
+        public async Task<bool> IsTaskTitleAvailableAsync(string title, int projectId, int? excludeTaskId = null) =>
+            !(await TaskTitleConflictsAsync(title, projectId, excludeTaskId));
+
+        public Dictionary<string, Dictionary<string, TaskStatusEdgeDto>> GetStatusTransitions()
+        {
+            var result = new Dictionary<string, Dictionary<string, TaskStatusEdgeDto>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (from, edges) in _transitions.Edges)
+            {
+                var toMap = new Dictionary<string, TaskStatusEdgeDto>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (to, requiresActualHours) in edges)
+                    toMap[to] = new TaskStatusEdgeDto { RequiresActualHours = requiresActualHours };
+                result[from] = toMap;
+            }
+            return result;
+        }
+
         public async Task<ApiResponse<TaskDto>> CreateTaskAsync(CreateTaskDto createTaskDto, int creatorId)
         {
             // Every task must have a positive estimate.
@@ -336,6 +391,10 @@ namespace TaskManagement.Services
             // Every new task must have at least one checklist item.
             if (createTaskDto.ChecklistItems == null || createTaskDto.ChecklistItems.Count == 0)
                 return new ApiResponse<TaskDto> { Success = false, Message = "At least one checklist item is required." };
+
+            if (await TaskTitleConflictsAsync(createTaskDto.Title, createTaskDto.ProjectId, null))
+                return new ApiResponse<TaskDto> { Success = false, Message =
+                    $"A task titled \"{createTaskDto.Title.Trim()}\" already exists in this project and is still active. Choose a different title, or reuse it once that task is marked Completed." };
 
             TaskEntity? parent = null;
             if (createTaskDto.ParentTaskId.HasValue)
@@ -396,6 +455,13 @@ namespace TaskManagement.Services
             if (task == null)
                 return new ApiResponse<TaskDto> { Success = false, Message = "Task not found" };
 
+            // Scoped against updateTaskDto.ProjectId (the destination project being submitted),
+            // not task.ProjectId — the edit form lets a task be moved to a different project, and
+            // the check must validate against wherever it's actually ending up.
+            if (await TaskTitleConflictsAsync(updateTaskDto.Title, updateTaskDto.ProjectId, id))
+                return new ApiResponse<TaskDto> { Success = false, Message =
+                    $"A task titled \"{updateTaskDto.Title.Trim()}\" already exists in this project and is still active. Choose a different title, or reuse it once that task is marked Completed." };
+
             // Status/conditions/codes are NOT changed via the generic update — preserve them.
             var preservedStatus = task.Status;
             var preservedStartedAt = task.StartedAt;
@@ -434,57 +500,14 @@ namespace TaskManagement.Services
             "new", "in-progress", "paused", "blocked", "under-review", "issues", "completed"
         };
 
-        // Edge info for each allowed transition
-        private sealed class EdgeInfo
-        {
-            public bool IsActualHoursExempt { get; init; }
-            public bool IsProductive { get; init; }
-        }
-
-        // Status state machine: from → { to → EdgeInfo }. Each edge carries its own
-        // requirement for ActualHours and whether the transition is productive (effort-tracking).
-        private static readonly Dictionary<string, Dictionary<string, EdgeInfo>> AllowedEdges = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["new"] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = true, IsProductive = false },  // starting work
-            },
-            ["in-progress"] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["paused"]       = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // pausing
-                ["blocked"]      = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // blocking
-                ["under-review"] = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // submitting for review
-            },
-            ["paused"] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = true }, // resuming
-            },
-            ["blocked"] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = true }, // unblocking
-            },
-            ["under-review"] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["completed"] = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // QA approve
-                ["issues"]    = new EdgeInfo { IsActualHoursExempt = true, IsProductive = true },  // QA fail
-            },
-            ["issues"] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = true }, // fixing issues
-            },
-            ["completed"] = new(StringComparer.OrdinalIgnoreCase)
-            {
-                ["in-progress"] = new EdgeInfo { IsActualHoursExempt = false, IsProductive = false }, // reopen (manager only)
-            },
-        };
-
-        // True when the given (from, to) edge doesn't require ActualHours. False (including for
-        // an edge that doesn't exist) so callers still fail closed via the AllowedEdges lookup.
-        private static bool IsActualHoursExempt(string from, string to) =>
-            AllowedEdges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var info) && info.IsActualHoursExempt;
-
-        private static bool IsProductiveTransition(string from, string to) =>
-            AllowedEdges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var info) && info.IsProductive;
+        // True when the given (from, to) edge requires ActualHours to be supplied. False
+        // (including for an edge that doesn't exist) so callers still fail closed via the
+        // graph lookup in ValidateStatusTransition. Backed by the config-driven transition graph
+        // (Services/TaskStatusTransitionProvider.cs, appsettings.json's "TaskStatusTransitions")
+        // rather than a hardcoded table — that graph is also the single source of truth for
+        // which (from, to) edges are valid at all (see ValidateStatusTransition below).
+        private bool RequiresActualHours(string from, string to) =>
+            _transitions.Edges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var required) && required;
 
         // Derives the human-readable action name from a (fromStatus, toStatus) pair.
         private static string DeriveActionName(string from, string to) =>
@@ -499,7 +522,9 @@ namespace TaskManagement.Services
                 ("under-review", "completed")     => "Approve & Complete",
                 ("under-review", "issues")        => "QA Failed / Return Issues",
                 ("issues",       "in-progress")   => "Fix Issues",
-                ("completed",    "in-progress")   => "Reopen",
+                ("in-progress",  "issues")        => "Report Issues",
+                ("in-progress",  "completed")     => "Mark Complete",
+                ("under-review", "in-progress")   => "Send Back from Review",
                 _                                 => $"{from} → {to}"
             };
 
@@ -509,11 +534,11 @@ namespace TaskManagement.Services
             if (!ValidStatuses.Contains(to))
                 return $"Invalid status '{to}'. Allowed: {string.Join(", ", ValidStatuses)}";
 
-            if (!AllowedEdges.TryGetValue(from, out var edges) || !edges.ContainsKey(to))
+            if (!_transitions.Edges.TryGetValue(from, out var edges) || !edges.ContainsKey(to))
                 return $"Cannot move a task from '{from}' to '{to}'.";
 
-            // Actual hours compulsory except for edges explicitly marked exempt.
-            if (requireActualHours && !IsActualHoursExempt(from, to)
+            // Actual hours compulsory on edges the config marks as requiring them.
+            if (requireActualHours && RequiresActualHours(from, to)
                 && (!actualHours.HasValue || actualHours.Value <= 0))
                 return $"Actual hours are required when moving a task to '{to}'.";
 
@@ -558,8 +583,8 @@ namespace TaskManagement.Services
                     break;
 
                 case "in-progress":
-                    if (from.Equals("completed", StringComparison.OrdinalIgnoreCase) && !isManager)
-                        return "Only the manager can reopen a completed task.";
+                    // completed→in-progress (Reopen) no longer exists as a transition — removed
+                    // from appsettings.json's TaskStatusTransitions — so there's nothing to gate here.
                     if (from.Equals("under-review", StringComparison.OrdinalIgnoreCase) && !isManager)
                         return "Only the manager can send a task back from review.";
                     if (!isAssignee && !isManager)
@@ -1254,7 +1279,7 @@ namespace TaskManagement.Services
                 Action = actionName,
                 ChangedById = userId,
                 Reason = dto.Reason,
-                ActualHours = IsActualHoursExempt(from, to) ? null : dto.ActualHours,
+                ActualHours = RequiresActualHours(from, to) ? dto.ActualHours : null,
                 ChangedAt = AppClock.Now
             });
             _context.Activities.Add(new Activity

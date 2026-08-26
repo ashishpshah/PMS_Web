@@ -32,6 +32,8 @@ coverage/
 # .NET
 bin/
 obj/
+*.dll
+*.exe   
 publish/
 *.user
 *.userosscache

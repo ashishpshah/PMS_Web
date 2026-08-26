@@ -41,7 +41,19 @@ namespace PMS.Tests
             notifs.Setup(n => n.NotifyUsersAsync(It.IsAny<List<int>>(), It.IsAny<NotificationDto>()))
                   .Returns(Task.CompletedTask);
 
-            _svc = new TaskService(_ctx, mapper, notifs.Object);
+            var env = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
+            var transitions = new Mock<ITaskStatusTransitionProvider>();
+            transitions.Setup(t => t.Edges).Returns(new Dictionary<string, IReadOnlyDictionary<string, bool>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["new"]           = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["in-progress"] = false },
+                ["in-progress"]   = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["paused"] = false, ["blocked"] = false, ["under-review"] = false },
+                ["paused"]        = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["in-progress"] = true },
+                ["blocked"]       = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["in-progress"] = true },
+                ["under-review"]  = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["completed"] = false, ["issues"] = false },
+                ["issues"]        = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) { ["in-progress"] = true },
+            });
+
+            _svc = new TaskService(_ctx, mapper, notifs.Object, env.Object, transitions.Object);
 
             Seed();
         }
@@ -85,9 +97,8 @@ namespace PMS.Tests
                 ProjectId    = 1,
                 AssignedToId = 1,
                 CreatedById  = 1,
-                DueDate      = DateTime.UtcNow.AddDays(7),
                 CreatedAt    = DateTime.UtcNow,
-                // No checklist items → treat as 100% complete so in-review gate passes
+                // No checklist items → treat as 100% complete so the under-review gate passes
                 Progress     = 100
             };
             _ctx.Tasks.Add(task);
@@ -137,11 +148,11 @@ namespace PMS.Tests
         }
 
         [Fact]
-        public async Task InReviewToCompleted_ByAdmin_Succeeds()
+        public async Task UnderReviewToCompleted_ByAdmin_Succeeds()
         {
             // Complete the checklist so the gate passes
             await SetStatus("in-progress");
-            await SetStatus("in-review", actualHours: 1m);
+            await SetStatus("under-review", actualHours: 1m);
 
             var result = await _svc.ChangeStatusAsync(_taskId,
                 new ChangeStatusDto { ToStatus = "completed", ActualHours = 1m }, _userId, isAdmin: true);
@@ -162,10 +173,10 @@ namespace PMS.Tests
         }
 
         [Fact]
-        public async Task NewToInReview_Fails()
+        public async Task NewToUnderReview_Fails()
         {
             var result = await _svc.ChangeStatusAsync(_taskId,
-                new ChangeStatusDto { ToStatus = "in-review", ActualHours = 1m }, _userId, isAdmin: true);
+                new ChangeStatusDto { ToStatus = "under-review", ActualHours = 1m }, _userId, isAdmin: true);
 
             Assert.False(result.Success);
         }
@@ -200,7 +211,7 @@ namespace PMS.Tests
             await SetStatus("in-progress");
 
             var result = await _svc.ChangeStatusAsync(_taskId,
-                new ChangeStatusDto { ToStatus = "in-review", ActualHours = 1m }, _userId, isAdmin: true);
+                new ChangeStatusDto { ToStatus = "under-review", ActualHours = 1m }, _userId, isAdmin: true);
 
             Assert.False(result.Success);
             Assert.Contains("checklist", result.Message, StringComparison.OrdinalIgnoreCase);

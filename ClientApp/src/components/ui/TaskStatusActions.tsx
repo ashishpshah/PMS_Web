@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
 import { Plus, Trash2, ShieldAlert, ChevronDown, X } from 'lucide-react';
-import { Status, STATUS_LABELS, AddBlockItem, BLOCK_CATEGORIES } from '../../types';
+import { Status, STATUS_LABELS, AddBlockItem, BLOCK_CATEGORIES, StatusTransitionGraph } from '../../types';
 import { TimeInput } from './TimeInput';
-import { fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, getAllowedNextStatuses, isActualHoursExempt } from '../../lib/utils';
+import { fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, getAllowedNextStatuses, requiresActualHours } from '../../lib/utils';
 import { VSelect } from '../forms/VSelect';
 import { cn } from '../../lib/utils';
+import { useData } from '../../context/DataContext';
 
 const STATUS_STYLE: Record<Status, { dot: string; active: string; idle: string }> = {
   'new':          { dot: 'bg-gray-400',    active: 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200',               idle: 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800' },
@@ -31,11 +32,12 @@ function isAllowedForUser(from: Status, to: Status, p: { isManager: boolean; isA
 }
 
 function getDisableReason(
+  graph: StatusTransitionGraph,
   to: Status,
   current: Status,
   p: { isManager: boolean; isAssignee: boolean; isQa: boolean; checklistComplete: boolean; activeBlockItemCount: number }
 ): string | null {
-  if (!getAllowedNextStatuses(current).includes(to)) return 'Invalid transition';
+  if (!getAllowedNextStatuses(graph, current).includes(to)) return 'Invalid transition';
   if (!isAllowedForUser(current, to, p)) return 'No permission';
   if ((to === 'under-review' || to === 'completed') && !p.checklistComplete) return 'Complete checklist first';
   if (current === 'blocked' && to === 'in-progress' && p.activeBlockItemCount > 0)
@@ -74,18 +76,20 @@ export function TaskStatusActions({
   const [selectedNextStatus, setSelectedNextStatus] = useState<Status | null>(null);
   const [hoursInput, setHoursInput] = useState('');
 
+  const { statusTransitions } = useData();
+
   const effAssignee = isAdmin || isAssignee;
   const ctx = { isManager, isAssignee: effAssignee, isQa, checklistComplete, activeBlockItemCount };
-  const targets = getAllowedNextStatuses(currentStatus);
+  const targets = getAllowedNextStatuses(statusTransitions, currentStatus);
 
   const nextStatusOptions = useMemo(() =>
     targets.map(to => ({ value: to, label: STATUS_LABELS[to] ?? to })),
     [targets]
   );
 
-  const requiresHours = selectedNextStatus ? !isActualHoursExempt(currentStatus, selectedNextStatus) : false;
-  const exempt = selectedNextStatus ? isActualHoursExempt(currentStatus, selectedNextStatus) : false;
-  const disableReason = selectedNextStatus ? getDisableReason(selectedNextStatus, currentStatus, ctx) : null;
+  const requiresHours = selectedNextStatus ? requiresActualHours(statusTransitions, currentStatus, selectedNextStatus) : false;
+  const exempt = !requiresHours;
+  const disableReason = selectedNextStatus ? getDisableReason(statusTransitions, selectedNextStatus, currentStatus, ctx) : null;
 
   const blockHours = fromHHMM(blockHoursInput);
   const blockHoursValid = isValidHoursEntry(blockHours);
@@ -93,8 +97,8 @@ export function TaskStatusActions({
   const handleStatusSelect = (to: Status | null) => {
     setSelectedNextStatus(to);
     if (to) {
-      const exempt = isActualHoursExempt(currentStatus, to);
-      setHoursInput(exempt ? '00:00' : '');
+      const needsHours = requiresActualHours(statusTransitions, currentStatus, to);
+      setHoursInput(needsHours ? '' : '00:00');
     } else {
       setHoursInput('');
     }
@@ -117,7 +121,7 @@ export function TaskStatusActions({
       setBlockOpen(true);
       return;
     }
-    const disableReason = getDisableReason(selectedNextStatus, currentStatus, ctx);
+    const disableReason = getDisableReason(statusTransitions, selectedNextStatus, currentStatus, ctx);
     if (disableReason) return;
     const hours = requiresHours ? fromHHMM(hoursInput) : undefined;
     if (requiresHours && !isValidHoursEntry(hours)) return;
@@ -173,7 +177,7 @@ export function TaskStatusActions({
           </div>
 
           <div className="grid grid-cols-[auto_1fr] gap-3 items-center">
-            <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Next Status</label>
+            <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap">Next Status <span className="text-red-500">*</span></label>
             <VSelect
               options={nextStatusOptions}
               value={selectedNextStatus ? nextStatusOptions.find(o => o.value === selectedNextStatus) ?? null : null}
@@ -297,7 +301,7 @@ function BlockForm({
         <Plus size={11} /> Add item
       </button>
       <div className="space-y-1">
-        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">Hours Spent (before blocking)</label>
+        <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">Hours Spent (before blocking) <span className="text-red-500">*</span></label>
         <TimeInput
           value={blockHoursInput}
           onChange={setBlockHoursInput}

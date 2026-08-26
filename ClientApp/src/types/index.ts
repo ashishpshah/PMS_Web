@@ -12,6 +12,15 @@ export const TASK_STATUSES: Status[] = [
   'new', 'in-progress', 'paused', 'blocked', 'under-review', 'issues', 'completed',
 ];
 
+// Config-driven status transition graph — fetched once from GET /api/tasks/status-transitions
+// (backed by appsettings.json's TaskStatusTransitions, see Services/TaskStatusTransitionProvider.cs)
+// and cached in DataContext, rather than hardcoded here. This is the single source of truth for
+// which (from, to) edges are valid and whether ActualHours is required on each.
+export interface StatusEdgeInfo {
+  requiresActualHours: boolean;
+}
+export type StatusTransitionGraph = Partial<Record<Status, Partial<Record<Status, StatusEdgeInfo>>>>;
+
 export const STATUS_LABELS: Record<Status, string> = {
   'new':          'New',
   'in-progress':  'In Progress',

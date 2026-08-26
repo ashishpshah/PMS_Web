@@ -294,7 +294,7 @@ export default function Diary() {
                     ];
                     return (
                       <div className="flex items-center gap-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 shrink-0">Date</label>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 shrink-0">Date <span className="text-red-400">*</span></label>
                         <div className="w-64">
                           <VSelect
                             options={dateOptions}

@@ -411,4 +411,12 @@ namespace TaskManagement.Services
         public string NewPassword { get; set; } = string.Empty;
     }
 
+    // Self-service change for an already-authenticated user — no OTP involved, since
+    // knowing the current password is itself the proof of identity here.
+    public class ChangePasswordDto
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword     { get; set; } = string.Empty;
+    }
+
 }

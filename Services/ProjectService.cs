@@ -21,6 +21,14 @@ namespace TaskManagement.Services
         Task<ApiResponse<ProjectDto>> SetProjectMembersAsync(int projectId, List<int> userIds);
         Task<ApiResponse<ProjectDto>> ReassignProjectAsync(int projectId, int newOwnerId, string reasonTag, int changedById);
         Task<ApiResponse<List<ProjectAssignmentHistoryDto>>> GetProjectAssignmentHistoryAsync(int projectId);
+        Task<bool> IsProjectNameAvailableAsync(string name, int? excludeProjectId = null);
+    }
+
+    // Single-purpose probe response for the live "check-name" endpoint — mirrors AvailabilityDto's
+    // role in Services/AuthService.cs. No AutoMapper mapping, so it lives here, not GeneralDtos.cs.
+    public class ProjectNameAvailabilityDto
+    {
+        public bool Available { get; set; }
     }
 
     public class ProjectService : IProjectService
@@ -117,8 +125,29 @@ namespace TaskManagement.Services
             return new ApiResponse<ProjectDto> { Success = true, Data = dto };
         }
 
+        // Two projects sharing a Name only conflict while the earlier one is still active work —
+        // a "completed" project's name is free to reuse. Used by both the live check-name endpoint
+        // and the Create/Update safety net below, so the query is defined exactly once.
+        private async Task<bool> ProjectNameConflictsAsync(string? name, int? excludeProjectId)
+        {
+            var trimmed = (name ?? string.Empty).Trim();
+            if (trimmed.Length == 0) return false; // presence/length is FluentValidation's job
+            var nameLower = trimmed.ToLower();
+            return await _context.Projects.AnyAsync(p =>
+                p.Name.ToLower() == nameLower &&
+                p.Status.ToLower() != "completed" &&
+                (!excludeProjectId.HasValue || p.Id != excludeProjectId.Value));
+        }
+
+        public async Task<bool> IsProjectNameAvailableAsync(string name, int? excludeProjectId = null) =>
+            !(await ProjectNameConflictsAsync(name, excludeProjectId));
+
         public async Task<ApiResponse<ProjectDto>> CreateProjectAsync(ProjectDto projectDto, int creatorId)
         {
+            if (await ProjectNameConflictsAsync(projectDto.Name, null))
+                return new ApiResponse<ProjectDto> { Success = false, Message =
+                    $"A project named \"{projectDto.Name.Trim()}\" already exists and is still active or on-hold. Choose a different name, or reuse it once that project is marked Completed." };
+
             var (seq, code) = await CodeGenerator.NextProjectCodeAsync(_context);
 
             var project = new Project
@@ -154,6 +183,10 @@ namespace TaskManagement.Services
                 .FirstOrDefaultAsync(p => p.Id == id);
             if (project == null)
                 return new ApiResponse<ProjectDto> { Success = false, Message = "Project not found" };
+
+            if (await ProjectNameConflictsAsync(projectDto.Name, id))
+                return new ApiResponse<ProjectDto> { Success = false, Message =
+                    $"A project named \"{projectDto.Name.Trim()}\" already exists and is still active or on-hold. Choose a different name, or reuse it once that project is marked Completed." };
 
             // ── Reconcile modules (replace-on-update, guard removals in use) ──
             var incoming = projectDto.Modules

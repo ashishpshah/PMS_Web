@@ -19,6 +19,8 @@ import { useSweetAlert } from '../context/SweetAlertContext';
 import { exportProjects, getSampleProjectCSV, getSampleTaskCSV, getSampleProjectWithTasksCSV, parseCSV } from '../lib/importExport';
 import { showSuccess, showError } from '../lib/toast';
 import { VSelect, SelectOption } from '../components/forms/VSelect';
+import { AvailabilityHint } from '../components/ui/AvailabilityHint';
+import { useProjectNameAvailability } from '../hooks/useProjectNameAvailability';
 
 export default function Projects() {
   const { projects, users, assignableUsers, tasks, addProject, updateProject, deleteProject, addActivity, updateProjectMembers } = useData();
@@ -43,6 +45,7 @@ export default function Projects() {
   const [formStatus, setFormStatus] = useState<ProjectStatus>('active');
   const [formOwnerId, setFormOwnerId] = useState<number>(0);
   const [formMemberIds, setFormMemberIds] = useState<number[]>([]);
+  const [formName, setFormName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── filter state ──────────────────────────────────────────────────────────
@@ -236,6 +239,7 @@ export default function Projects() {
       setFormStatus((project.status as ProjectStatus) || 'active');
       setFormOwnerId(project.ownerId ?? currentUser?.id ?? 0);
       setFormMemberIds(project.memberIds ?? []);
+      setFormName(project.name);
     } else {
       setEditingProject(null);
       setAttachments([]);
@@ -243,17 +247,27 @@ export default function Projects() {
       setFormStatus('active');
       setFormOwnerId(currentUser?.id ?? 0);
       setFormMemberIds([]);
+      setFormName('');
     }
     setModuleInput('');
     setIsModalOpen(true);
   };
 
+  const nameAvail = useProjectNameAvailability(formName, {
+    enabled: isModalOpen && formName.trim().length > 0,
+    excludeProjectId: editingProject?.id,
+  });
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (nameAvail === 'taken') {
+      showError(`A project named "${formName.trim()}" already exists and is still active or on-hold. Rename it, or reuse this name once the other project is completed.`);
+      return;
+    }
     const formData = new FormData(e.currentTarget);
     const projectData: Project = {
       id: editingProject?.id ?? 0,
-      name: formData.get('name') as string,
+      name: formName.trim(),
       description: formData.get('description') as string,
       status: formStatus,
       progress: 0,
@@ -665,16 +679,17 @@ export default function Projects() {
               </div>
             )}
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Project Name</label>
-              <input name="name" required defaultValue={editingProject?.name} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Project Name <span className="text-red-500">*</span></label>
+              <input name="name" required value={formName} onChange={e => setFormName(e.target.value)} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
+              <AvailabilityHint state={nameAvail} label="Project name" />
             </div>
             <div>
-              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Description</label>
+              <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Description <span className="text-red-500">*</span></label>
               <textarea name="description" rows={3} required defaultValue={editingProject?.description} className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Status</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Status <span className="text-red-500">*</span></label>
                 {(() => {
                   const statusOptions: SelectOption[] = [
                     { value: 'active', label: 'Active' },
@@ -693,7 +708,7 @@ export default function Projects() {
                 })()}
               </div>
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Project Owner</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Project Owner <span className="text-red-500">*</span></label>
                 {(() => {
                   const ownerSelectOptions: SelectOption[] = ownerOptions.map(u => ({ value: u.id, label: `${u.name} - ${u.role}` }));
                   return (
@@ -710,7 +725,7 @@ export default function Projects() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Start Date</label>
+                <label className="block text-[11px] font-black uppercase tracking-widest text-gray-400 mb-1">Start Date <span className="text-red-500">*</span></label>
                 <DateInput name="startDate" defaultValue={editingProject ? (toInputDate(editingProject.startDate) || '') : new Date().toISOString().split('T')[0]} className="px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-[13px]" />
               </div>
               <div>

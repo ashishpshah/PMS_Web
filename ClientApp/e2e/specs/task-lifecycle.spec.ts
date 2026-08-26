@@ -1,26 +1,33 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 
 /**
- * End-to-end coverage of the full task status machine (Services/TaskService.cs's
- * AllowedEdges), driven entirely through the real UI (Tasks page → task edit modal →
- * "Status & Blocks" tab, which wraps the same <TaskStatusActions> component used by
- * QuickView and the Kanban "•••" popover).
+ * End-to-end coverage of the full task status machine — no longer hardcoded in
+ * Services/TaskService.cs, now sourced from appsettings.json's TaskStatusTransitions (see
+ * Services/TaskStatusTransitionProvider.cs) and fetched by the frontend via
+ * GET /api/tasks/status-transitions — driven entirely through the real UI (Tasks page → task
+ * edit modal → "Status & Blocks" tab, which wraps the same <TaskStatusActions> component used
+ * by QuickView and the Kanban "•••" popover).
  *
  * Uses the default admin storageState from global-setup.ts (not overridden here) since
  * these flows need a real, permissioned session — unlike register-login.spec.ts, which
  * deliberately runs unauthenticated.
  *
- * Edges exercised (Services/TaskService.cs:426 AllowedEdges):
+ * Edges exercised (per appsettings.json's TaskStatusTransitions — "hours required" reflects
+ * that config's isSpentHours flag, not the old hardcoded AllowedEdges values):
  *   new → in-progress            (Start Work, hours exempt)
- *   in-progress → paused         (Pause, hours exempt)
- *   paused → in-progress         (Resume, hours required)
+ *   in-progress → paused         (Pause, hours required)
+ *   paused → in-progress         (Resume, hours exempt)
  *   in-progress → blocked        (Block, hours + block-reason items required)
- *   blocked → in-progress        (Unblock, hours required)
+ *   blocked → in-progress        (Unblock, hours exempt)
  *   in-progress → under-review   (Submit for Review, hours required, checklist 100%)
  *   under-review → issues        (QA Failed, hours exempt)
- *   issues → in-progress         (Fix Issues, hours required)
- *   under-review → completed     (Approve & Complete, hours required, checklist 100%)
- *   completed → in-progress      (Reopen — manager-only, hours required)
+ *   issues → in-progress         (Fix Issues, hours exempt)
+ *   under-review → completed     (Approve & Complete, hours exempt, checklist 100%)
+ *
+ * NOTE: completed → in-progress (Reopen) no longer exists as a transition — dropped from
+ * TaskStatusTransitions — so this spec no longer exercises it. Three edges are new
+ * (in-progress→issues, in-progress→completed, under-review→in-progress) and aren't yet
+ * covered by a dedicated step here; that's a follow-up, not done as part of this change.
  */
 
 const EXISTING_TASK_TITLE = 'Identify and Fix Application Bugs';
@@ -209,7 +216,7 @@ test.describe('Task lifecycle — full status journey', () => {
     }
   });
 
-  test('drives the existing task through every status, including reopen, to Completed', async ({ page }) => {
+  test('drives the existing task through every status to Completed', async ({ page }) => {
     // Default 45s is well short of what ~13 transitions each cost with the config's
     // slowMo: 1500 in play — give this one room instead of racing the clock. Every action
     // inside the helpers now carries its own 15s timeout, so a genuine stall surfaces with a
@@ -246,14 +253,11 @@ test.describe('Task lifecycle — full status journey', () => {
     await changeStatus(dialog, page, 'In Progress', '01:00');
 
     // in-progress → under-review → completed (Submit again, approve)
+    // NOTE: completed → in-progress (Reopen) no longer exists as a transition (removed from
+    // appsettings.json's TaskStatusTransitions), so the journey ends here now instead of
+    // reopening and completing a second time.
     await changeStatus(dialog, page, 'Under Review', '00:30');
     await changeStatus(dialog, page, 'Completed', '00:15');
-
-    // completed → in-progress (Reopen — manager-only) → under-review → completed again,
-    // to also exercise the one AllowedEdges entry the path above didn't hit.
-    await changeStatus(dialog, page, 'In Progress', '00:10');
-    await changeStatus(dialog, page, 'Under Review', '00:10');
-    await changeStatus(dialog, page, 'Completed', '00:10');
   });
 
   test('creates a new task and takes it through a fresh new→completed journey', async ({ page }) => {

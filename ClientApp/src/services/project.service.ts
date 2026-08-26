@@ -117,6 +117,13 @@ export const projectService = {
     return mapApiProject(dto);
   },
 
+  async checkNameAvailable(name: string, excludeProjectId?: number): Promise<boolean> {
+    const qs = new URLSearchParams({ name });
+    if (excludeProjectId != null) qs.set('excludeProjectId', String(excludeProjectId));
+    const res = await apiRequest<{ available: boolean }>(`/projects/check-name?${qs.toString()}`);
+    return res.available;
+  },
+
   async delete(id: number): Promise<void> {
     return apiRequest<void>(`/projects/${id}`, {
       method: 'DELETE',

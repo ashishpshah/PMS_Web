@@ -1,6 +1,6 @@
 import { apiRequest, apiRequestWithMeta, getAccessToken } from '../lib/api';
 import { getApiUrl } from '../config/dataSource';
-import { Task, Attachment, TaskComment, ChecklistItem, TaskAssignmentHistory, TaskBlockEntry, ReasonTag, LinkedTaskRef, Status, TaskStatusHistory, TaskEffort, TaskConditionHistory, TaskIssueEntry, TaskReviewIssue, BlockChecklistItem, AddBlockItem, ReviewChecklistItem } from '../types';
+import { Task, Attachment, TaskComment, ChecklistItem, TaskAssignmentHistory, TaskBlockEntry, ReasonTag, LinkedTaskRef, Status, TaskStatusHistory, TaskEffort, TaskConditionHistory, TaskIssueEntry, TaskReviewIssue, BlockChecklistItem, AddBlockItem, ReviewChecklistItem, StatusTransitionGraph } from '../types';
 
 interface ApiChecklistItemDto {
   id: number;
@@ -462,6 +462,17 @@ export const taskService = {
       }),
     });
     return mapApiTask(dto);
+  },
+
+  async checkTitleAvailable(title: string, projectId: number, excludeTaskId?: number): Promise<boolean> {
+    const qs = new URLSearchParams({ title, projectId: String(projectId) });
+    if (excludeTaskId != null) qs.set('excludeTaskId', String(excludeTaskId));
+    const res = await apiRequest<{ available: boolean }>(`/tasks/check-title?${qs.toString()}`);
+    return res.available;
+  },
+
+  async getStatusTransitions(): Promise<StatusTransitionGraph> {
+    return apiRequest<StatusTransitionGraph>('/tasks/status-transitions');
   },
 
   async start(taskId: number): Promise<Task> {

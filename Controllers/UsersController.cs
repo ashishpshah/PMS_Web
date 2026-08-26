@@ -7,7 +7,6 @@ using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using IAuthorizationService = TaskManagement.Services.IAuthorizationService;
@@ -143,15 +142,15 @@ namespace TaskManagement.Controllers
             if (target == null)
                 return NotFound(new ApiResponse<string> { Success = false, Message = "User not found" });
 
-            // Generate a cryptographically random 12-char temporary password (never returned in response).
-            var bytes = RandomNumberGenerator.GetBytes(9);
-            var tempPassword = Convert.ToBase64String(bytes).Replace('+', '@').Replace('/', '!').TrimEnd('=');
+            // Fixed reset password — every admin-triggered reset sets the same known value
+            // (never returned in the API response).
+            const string tempPassword = "Az@12345";
 
             target.PasswordHash = PasswordHasher.HashPassword(tempPassword);
             target.UpdatedAt    = AppClock.Now;
             await _context.SaveChangesAsync();
 
-            // Deliver the temporary password to the user's own email — never include it in the API response.
+            // Deliver the reset password to the user's own email — never include it in the API response.
             try
             {
                 var html = $@"<p>Hello {target.FirstName},</p>

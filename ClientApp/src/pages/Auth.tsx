@@ -323,7 +323,7 @@ export default function Auth() {
         {card(
           <form className="space-y-6 text-left" onSubmit={handleLogin}>
             <div className="space-y-1.5">
-              <label className={LABEL_CLS}>Email or Mobile No</label>
+              <label className={LABEL_CLS}>Email or Mobile No <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input type="text" name="identifier" placeholder="Enter email or mobile" autoComplete="email" tabIndex={1} className={INPUT_CLS} />
@@ -332,7 +332,7 @@ export default function Auth() {
 
             <div className="space-y-1.5">
               <div className="flex justify-between items-center ml-1">
-                <label className={LABEL_CLS}>Password</label>
+                <label className={LABEL_CLS}>Password <span className="text-red-500">*</span></label>
                 <button type="button" tabIndex={4} onClick={() => setView('forgot')} className="text-[10px] font-bold text-indigo-600 hover:underline uppercase tracking-widest">
                   Forgot Password?
                 </button>
@@ -384,20 +384,20 @@ export default function Auth() {
           <form className="space-y-5 text-left" onSubmit={handleInitiateRegister}>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className={LABEL_CLS}>First Name</label>
+                <label className={LABEL_CLS}>First Name <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <input type="text" placeholder="John" autoComplete="given-name" value={regFirstName} onChange={e => setRegFirstName(e.target.value)} className={INPUT_CLS} />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className={LABEL_CLS}>Last Name</label>
+                <label className={LABEL_CLS}>Last Name <span className="text-red-500">*</span></label>
                 <input type="text" placeholder="Doe" autoComplete="family-name" value={regLastName} onChange={e => setRegLastName(e.target.value)} className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-950 border border-gray-100 dark:border-gray-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-medium text-gray-900 dark:text-white placeholder-gray-400" />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className={LABEL_CLS}>Email Address</label>
+              <label className={LABEL_CLS}>Email Address <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input type="email" placeholder="Enter your email" autoComplete="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className={INPUT_CLS} />
@@ -414,7 +414,7 @@ export default function Auth() {
             </div>
 
             <div className="space-y-1.5">
-              <label className={LABEL_CLS}>Password</label>
+              <label className={LABEL_CLS}>Password <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input type={showRegPwd ? 'text' : 'password'} placeholder="Min 6 chars, A–Z, a–z, 0–9" autoComplete="new-password" value={regPassword} onChange={e => setRegPassword(e.target.value)} className={INPUT_CLS + ' pr-12'} />
@@ -492,7 +492,7 @@ export default function Auth() {
             </div>
 
             <div className="space-y-1.5">
-              <label className={LABEL_CLS}>Email Address</label>
+              <label className={LABEL_CLS}>Email Address <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input type="email" name="forgotEmail" placeholder="Enter your email" autoComplete="email" className={INPUT_CLS} />
@@ -533,7 +533,7 @@ export default function Auth() {
             <OtpInput value={otpValue} onChange={setOtpValue} />
 
             <div className="space-y-1.5 text-left">
-              <label className={LABEL_CLS}>New Password</label>
+              <label className={LABEL_CLS}>New Password <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input

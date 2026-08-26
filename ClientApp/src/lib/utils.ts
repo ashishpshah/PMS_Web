@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Status } from '../types';
+import { Status, StatusTransitionGraph } from '../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,51 +17,19 @@ export function isValidHoursEntry(hours: number | null | undefined): hours is nu
   return hours != null && hours > 0 && hours <= MAX_HOURS_PER_ENTRY;
 }
 
-// Mirrors backend AllowedEdges' per-edge config (Services/TaskService.cs).
-export interface EdgeInfo {
-  isActualHoursExempt: boolean;
+// The transition graph itself is no longer hardcoded here — it's fetched once from
+// GET /api/tasks/status-transitions (backed by appsettings.json's TaskStatusTransitions) and
+// cached in DataContext, then threaded through to these pure helper functions. This closes a
+// drift bug where this file's own hardcoded copy silently diverged from the backend's.
+
+/** Allowed next statuses for a given status, per the fetched transition graph. */
+export function getAllowedNextStatuses(graph: StatusTransitionGraph, status: Status): Status[] {
+  return Object.keys(graph[status] ?? {}) as Status[];
 }
 
-export const ALLOWED_EDGES: Partial<Record<Status, Partial<Record<Status, EdgeInfo>>>> = {
-  'new': {
-    'in-progress': { isActualHoursExempt: true },
-  },
-  'in-progress': {
-    'paused':       { isActualHoursExempt: true },
-    'blocked':      { isActualHoursExempt: true },
-    'under-review': { isActualHoursExempt: true },
-  },
-  'paused': {
-    'in-progress': { isActualHoursExempt: false },
-  },
-  'blocked': {
-    'in-progress': { isActualHoursExempt: false },
-  },
-  'under-review': {
-    'completed': { isActualHoursExempt: true },
-    'issues':    { isActualHoursExempt: true },
-    'in-progress': { isActualHoursExempt: false },
-    'blocked':      { isActualHoursExempt: false },
-  },
-  'issues': {
-    'in-progress': { isActualHoursExempt: false },
-    'under-review': { isActualHoursExempt: false },
-    'completed': { isActualHoursExempt: false },
-    'blocked':      { isActualHoursExempt: false },
-  },
-  'completed': {
-    'in-progress': { isActualHoursExempt: false },
-  },
-};
-
-// Helper to check if a transition requires actual hours (false = mandatory hours)
-export function isActualHoursExempt(from: Status, to: Status): boolean {
-  return ALLOWED_EDGES[from]?.[to]?.isActualHoursExempt ?? false;
-}
-
-// Allowed next statuses for a given status
-export function getAllowedNextStatuses(status: Status): Status[] {
-  return Object.keys(ALLOWED_EDGES[status] ?? {}) as Status[];
+/** True when the given (from, to) edge requires ActualHours to be supplied. */
+export function requiresActualHours(graph: StatusTransitionGraph, from: Status, to: Status): boolean {
+  return graph[from]?.[to]?.requiresActualHours ?? false;
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {

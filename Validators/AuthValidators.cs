@@ -112,4 +112,20 @@ namespace TaskManagement.Validators
             RuleFor(x => x.RefreshToken).NotEmpty().WithMessage("Refresh token is required.");
         }
     }
+
+    public class ChangePasswordDtoValidator : AbstractValidator<ChangePasswordDto>
+    {
+        public ChangePasswordDtoValidator()
+        {
+            RuleFor(x => x.CurrentPassword).RequiredText(200, 1);
+            RuleFor(x => x.NewPassword)
+                .RequiredText(200, ValidationConstants.PasswordMinLength)
+                .Matches(ValidationConstants.PasswordComplexityPattern)
+                    .WithMessage("Password must contain at least one uppercase letter, one lowercase letter, and one digit.");
+            RuleFor(x => x)
+                .Must(x => x.NewPassword != x.CurrentPassword)
+                .WithMessage("New password must be different from your current password.")
+                .WithName("NewPassword");
+        }
+    }
 }
