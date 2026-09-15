@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'motion/react';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { cn } from '../../lib/utils';
@@ -40,6 +41,7 @@ export function DashboardLayout() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { user } = useAuth();
+  const location = useLocation();
   const bannerOffset = user?.isImpersonated ? 'pt-9' : '';
 
   return (
@@ -69,7 +71,12 @@ export function DashboardLayout() {
       )} id="main-content">
         <Navbar onMenuClick={() => setIsMobileMenuOpen(true)} isCollapsed={isCollapsed} />
         <main className="flex-1 pt-16 p-4 lg:p-6 lg:pt-16 custom-scrollbar overflow-x-hidden">
-          <Outlet />
+          {/* Keyed by pathname so AnimatePresence sees route changes as an exit + enter pair —
+              without this, each page's PageTransition motion.div was unmounted immediately by
+              React Router and its `exit` animation never had a chance to play. */}
+          <AnimatePresence mode="wait">
+            <Outlet key={location.pathname} />
+          </AnimatePresence>
         </main>
       </div>
       <QuickViewContainer />

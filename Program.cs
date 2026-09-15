@@ -138,6 +138,13 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<ITaskTemplateService, TaskTemplateService>();
 builder.Services.AddSingleton<ITaskStatusTransitionProvider, TaskStatusTransitionProvider>();
+
+// Leave and Holidays module
+builder.Services.AddScoped<IWorkweekRulesService, WorkweekRulesService>();
+builder.Services.AddScoped<IHolidayService, HolidayService>();
+builder.Services.AddScoped<ILeaveTypeService, LeaveTypeService>();
+builder.Services.AddScoped<IAnnualLeaveAllocationService, AnnualLeaveAllocationService>();
+builder.Services.AddScoped<ILeaveService, LeaveService>();
 builder.Services.AddHostedService<TaskTemplateSchedulerService>();
 builder.Services.AddHostedService<OtpCleanupService>();
 builder.Services.AddSingleton<IOnlineUserTracker, OnlineUserTracker>();
@@ -186,11 +193,21 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+// Allowed origins are config-driven (Cors:AllowedOrigins in appsettings.json) so a production
+// domain can be added via config/environment (e.g. Cors__AllowedOrigins__2) without a code
+// change or redeploy. Falls back to the historical localhost dev origins if the section is
+// missing/empty. AllowCredentials() is in use, so origins must stay an explicit allowlist —
+// AllowAnyOrigin() is not permitted together with AllowCredentials().
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+if (corsOrigins == null || corsOrigins.Length == 0)
+{
+    corsOrigins = new[] { "http://localhost:3000", "http://localhost:5178" };
+}
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5178")
+        policy.WithOrigins(corsOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();

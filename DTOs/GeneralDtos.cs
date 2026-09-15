@@ -871,6 +871,133 @@ namespace TaskManagement.DTOs
         public int? ProjectId { get; set; }
     }
 
+    // ── Leave and Holidays module ───────────────────────────────────────────
+
+    // Read shape for the editable Rules Settings. WorkStartTime/WorkEndTime are plain "HH:mm"
+    // strings (matching ClientApp's TimeInput convention) rather than a raw TimeSpan, which
+    // System.Text.Json would serialize as "10:00:00" instead.
+    public class WorkweekRulesDto
+    {
+        public string WorkStartTime { get; set; } = "10:00";
+        public string WorkEndTime { get; set; } = "19:00";
+        public int BreakMinMinutes { get; set; } = 30;
+        public int BreakMaxMinutes { get; set; } = 60;
+        public List<int> HolidaySaturdayOccurrences { get; set; } = new() { 1, 3, 5 };
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class UpdateWorkweekRulesDto
+    {
+        public string WorkStartTime { get; set; } = string.Empty;
+        public string WorkEndTime { get; set; } = string.Empty;
+        public int BreakMinMinutes { get; set; }
+        public int BreakMaxMinutes { get; set; }
+        public List<int> HolidaySaturdayOccurrences { get; set; } = new();
+    }
+
+    public class HolidayDto
+    {
+        public int Id { get; set; }
+        public DateTime Date { get; set; }
+        public string Name { get; set; } = string.Empty;
+        // "Holiday" | "WorkingDay"
+        public string DayType { get; set; } = "Holiday";
+        public bool IsManualOverride { get; set; }
+    }
+
+    public class SetHolidayOverrideDto
+    {
+        public DateTime Date { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string DayType { get; set; } = string.Empty;
+    }
+
+    public class LeaveTypeDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+    }
+
+    public class SaveLeaveTypeDto
+    {
+        public string Name { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+    }
+
+    // Type-agnostic — one pooled balance per user per year, sourced from AnnualLeaveAllocation.
+    public class LeaveBalanceDto
+    {
+        public int Year { get; set; }
+        public decimal AllocatedDays { get; set; }
+        public decimal UsedDays { get; set; }
+        public decimal AvailableDays { get; set; }
+    }
+
+    public class AnnualLeaveAllocationDto
+    {
+        public int Year { get; set; }
+        public decimal LeaveDays { get; set; }
+    }
+
+    public class UpdateAnnualLeaveAllocationDto
+    {
+        public decimal LeaveDays { get; set; }
+    }
+
+    public class LeaveRequestDto
+    {
+        public int Id { get; set; }
+        public int UserId { get; set; }
+        public string UserFullName { get; set; } = string.Empty;
+        public string? UserAvatarUrl { get; set; }
+        public int LeaveTypeId { get; set; }
+        public string LeaveTypeName { get; set; } = string.Empty;
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public decimal DayCount { get; set; }
+        public string Reason { get; set; } = string.Empty;
+        // "Pending" | "Approved" | "Rejected"
+        public string Status { get; set; } = "Pending";
+        public int? ApproverId { get; set; }
+        public string? ApproverName { get; set; }
+        public DateTime? DecisionAt { get; set; }
+        public string? DecisionNote { get; set; }
+        public bool AllowEdit { get; set; } = true;
+        public bool AllowDelete { get; set; } = true;
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class CreateLeaveRequestDto
+    {
+        public int LeaveTypeId { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    // Same shape as CreateLeaveRequestDto — kept as a separate type so the two can diverge later
+    // (e.g. if edit ever needs different rules than create) without a breaking change.
+    public class UpdateLeaveRequestDto
+    {
+        public int LeaveTypeId { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    public class DecideLeaveRequestDto
+    {
+        public bool Approve { get; set; }
+        public string? DecisionNote { get; set; }
+    }
+
+    public class SetLeaveRequestPermissionsDto
+    {
+        public bool AllowEdit { get; set; }
+        public bool AllowDelete { get; set; }
+    }
+
     public class DailyUtilizationItemDto
     {
         public DateTime Date { get; set; }

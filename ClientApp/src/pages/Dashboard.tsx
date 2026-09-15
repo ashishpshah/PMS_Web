@@ -423,7 +423,7 @@ function ReportsUserEffortModal({ userId, userName, userAvatar, onClose }: Repor
 
 export default function Dashboard() {
   const { projects, users, assignableUsers, loading, reassignTask } = useData();
-  const { isAdmin, user: currentUser } = useAuth();
+  const { isAdmin, isSystemAdmin, user: currentUser } = useAuth();
   const [reassigningTaskId, setReassigningTaskId] = useState<number | null>(null);
 
   // ── Pagination state — only for cards that keep pagination. Assigned to Me /
@@ -439,7 +439,9 @@ export default function Dashboard() {
   // Reports() component state verbatim. Runs its own independent period/user/
   // project filters, separate from the shared DashboardFilterBar below.
   // ════════════════════════════════════════════════════════════════════════
-  const [reportsPeriod, setReportsPeriod] = useState<PeriodKey>('all');
+  // Default to "Today" scoped to the logged-in user — except System Admin, who
+  // defaults to "All time" / "All users" (matching the previous behavior for that role only).
+  const [reportsPeriod, setReportsPeriod] = useState<PeriodKey>(isSystemAdmin ? 'all' : 'today');
   const [reportsCustomFrom, setReportsCustomFrom] = useState('');
   const [reportsCustomTo, setReportsCustomTo] = useState('');
 
@@ -447,7 +449,9 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<HoursSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryTab, setSummaryTab] = useState<'user' | 'project'>('user');
-  const [reportsFilterUserId, setReportsFilterUserId] = useState<number | 'all'>('all');
+  const [reportsFilterUserId, setReportsFilterUserId] = useState<number | 'all'>(
+    isSystemAdmin ? 'all' : (currentUser?.id ?? 'all')
+  );
   const [filterProjectId, setFilterProjectId] = useState<number | 'all'>('all');
 
   // Modal — for non-admins, auto-open on their own id immediately

@@ -27,6 +27,10 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Diary = lazy(() => import('./pages/Diary'));
+const CalendarPage = lazy(() => import('./pages/Calendar'));
+const Leaves = lazy(() => import('./pages/Leaves'));
+const Holidays = lazy(() => import('./pages/Holidays'));
+const LeaveType = lazy(() => import('./pages/LeaveType'));
 const TemplateList   = lazy(() => import('./pages/TemplateList'));
 const TemplateForm   = lazy(() => import('./pages/TemplateForm'));
 const TemplateDetail = lazy(() => import('./pages/TemplateDetail'));
@@ -140,6 +144,10 @@ export default function App() {
                           <Route path="/chat" element={<Chat />} />
                           <Route path="/reports" element={<Reports />} />
                           <Route path="/diary" element={<Diary />} />
+                          <Route path="/calendar" element={<CalendarPage />} />
+                          <Route path="/leaves" element={<Leaves />} />
+                          <Route path="/holidays" element={<Holidays />} />
+                          <Route path="/leave-types" element={<LeaveType />} />
                           <Route path="/templates" element={<TemplateList />} />
                           <Route path="/templates/new" element={<TemplateForm />} />
                           <Route path="/templates/:id/edit" element={<TemplateForm />} />

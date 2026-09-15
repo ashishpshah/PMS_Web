@@ -55,6 +55,13 @@ namespace TaskManagement.Data
         public DbSet<ReviewChecklistItem>          ReviewChecklistItems          => Set<ReviewChecklistItem>();
         public DbSet<BlockChecklistItem>           BlockChecklistItems           => Set<BlockChecklistItem>();
 
+        // Leave and Holidays module
+        public DbSet<WorkweekRules> WorkweekRules => Set<WorkweekRules>();
+        public DbSet<Holiday>       Holidays      => Set<Holiday>();
+        public DbSet<LeaveType>     LeaveTypes    => Set<LeaveType>();
+        public DbSet<AnnualLeaveAllocation> AnnualLeaveAllocations => Set<AnnualLeaveAllocation>();
+        public DbSet<LeaveRequest>  LeaveRequests => Set<LeaveRequest>();
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             // Unique role code (filtered so multiple legacy NULLs are allowed)
@@ -366,6 +373,66 @@ namespace TaskManagement.Data
                 .HasForeignKey(wd => wd.TaskId).OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<WorkDiary>()
                 .Property(wd => wd.HoursSpent).HasColumnType("decimal(5,2)");
+
+            // WorkweekRules — singleton config row (the row with the lowest Id is authoritative;
+            // WorkweekRulesService always reads/creates via OrderBy(Id).FirstOrDefault).
+            modelBuilder.Entity<WorkweekRules>()
+                .HasOne(w => w.UpdatedByUser).WithMany()
+                .HasForeignKey(w => w.UpdatedByUserId).OnDelete(DeleteBehavior.SetNull);
+            modelBuilder.Entity<WorkweekRules>()
+                .Property(w => w.HolidaySaturdayOccurrences).HasMaxLength(50);
+
+            // Holiday — one row per calendar date that deviates from the plain Mon-Fri default.
+            // CreatedById is nullable: rows materialized by RegenerateSaturdayHolidaysAsync have
+            // no specific author (system-generated), only admin-set overrides do.
+            modelBuilder.Entity<Holiday>()
+                .HasIndex(h => h.Date).IsUnique();
+            modelBuilder.Entity<Holiday>()
+                .Property(h => h.Name).HasMaxLength(200);
+            modelBuilder.Entity<Holiday>()
+                .Property(h => h.DayType).HasMaxLength(20);
+            modelBuilder.Entity<Holiday>()
+                .HasOne(h => h.CreatedBy).WithMany()
+                .HasForeignKey(h => h.CreatedById).OnDelete(DeleteBehavior.SetNull);
+
+            // LeaveType — a pure category/label (no quota of its own; the actual day count comes
+            // from AnnualLeaveAllocation below, shared across every type).
+            modelBuilder.Entity<LeaveType>()
+                .Property(lt => lt.Name).HasMaxLength(100);
+            modelBuilder.Entity<LeaveType>()
+                .HasIndex(lt => lt.Name).IsUnique();
+
+            // AnnualLeaveAllocation — one global row per calendar year: how many leave days every
+            // employee gets that year, pooled across leave types. Only the current year's row is
+            // ever editable (enforced in the service, not here).
+            modelBuilder.Entity<AnnualLeaveAllocation>()
+                .Property(a => a.LeaveDays).HasColumnType("decimal(6,2)");
+            modelBuilder.Entity<AnnualLeaveAllocation>()
+                .HasIndex(a => a.Year).IsUnique();
+
+            // LeaveRequest
+            modelBuilder.Entity<LeaveRequest>()
+                .HasOne(lr => lr.User).WithMany()
+                .HasForeignKey(lr => lr.UserId).OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<LeaveRequest>()
+                .HasOne(lr => lr.LeaveType).WithMany()
+                .HasForeignKey(lr => lr.LeaveTypeId).OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<LeaveRequest>()
+                .HasOne(lr => lr.Approver).WithMany()
+                .HasForeignKey(lr => lr.ApproverId).OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<LeaveRequest>()
+                .Property(lr => lr.DayCount).HasColumnType("decimal(5,2)");
+            modelBuilder.Entity<LeaveRequest>()
+                .Property(lr => lr.Status).HasMaxLength(20);
+            modelBuilder.Entity<LeaveRequest>()
+                .Property(lr => lr.Reason).HasMaxLength(2000);
+            // Explicit SQL-level defaults matching the C# property initializers — without these,
+            // EF's ADD COLUMN migration would default existing/omitted-column rows to false,
+            // silently disagreeing with `= true` on the entity.
+            modelBuilder.Entity<LeaveRequest>()
+                .Property(lr => lr.AllowEdit).HasDefaultValue(true);
+            modelBuilder.Entity<LeaveRequest>()
+                .Property(lr => lr.AllowDelete).HasDefaultValue(true);
 
             // TaskConditionHistory
             modelBuilder.Entity<TaskConditionHistory>()
@@ -1133,5 +1200,86 @@ namespace TaskManagement.Data
         public User?     CreatedBy                  { get; set; }
         public DateTime  CreatedAt                  { get; set; } = AppClock.Now;
         public DateTime? UpdatedAt                  { get; set; }
+    }
+
+    // ── Leave and Holidays module ───────────────────────────────────────────
+
+    // Singleton config row (the lowest-Id row is authoritative — see WorkweekRulesService).
+    // Defaults here match the seeded values in DatabaseInitializer.
+    public class WorkweekRules
+    {
+        public int Id { get; set; }
+        public TimeSpan WorkStartTime { get; set; } = new TimeSpan(10, 0, 0);
+        public TimeSpan WorkEndTime { get; set; } = new TimeSpan(19, 0, 0);
+        public int BreakMinMinutes { get; set; } = 30;
+        public int BreakMaxMinutes { get; set; } = 60;
+        // CSV list of Nth-Saturday-of-month occurrences (1-5) that are a full day off. Default:
+        // 1st/3rd/5th off, 2nd/4th a full working day.
+        public string HolidaySaturdayOccurrences { get; set; } = "1,3,5";
+        public DateTime UpdatedAt { get; set; } = AppClock.Now;
+        public int? UpdatedByUserId { get; set; }
+        public User? UpdatedByUser { get; set; }
+    }
+
+    // One row per calendar date that deviates from the plain Mon-Fri default: an auto-generated
+    // Saturday (IsManualOverride = false) or an admin's explicit override (true, never clobbered
+    // by regeneration).
+    public class Holiday
+    {
+        public int Id { get; set; }
+        public DateTime Date { get; set; }
+        public string Name { get; set; } = string.Empty;
+        // "Holiday" | "WorkingDay"
+        public string DayType { get; set; } = "Holiday";
+        public bool IsManualOverride { get; set; }
+        public int? CreatedById { get; set; }
+        public User? CreatedBy { get; set; }
+        public DateTime CreatedAt { get; set; } = AppClock.Now;
+    }
+
+    // A pure category/label for a leave request (e.g. "Casual Leave") — carries no quota of its
+    // own. IsActive controls whether it's still selectable when filing a new request; existing
+    // requests keep referencing it either way.
+    public class LeaveType
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+    }
+
+    // One row per calendar year: the total leave days every employee gets that year, pooled
+    // across all leave types (not per-type). Auto-provisioned with 12 days for the current year
+    // if missing (see LeaveService/AnnualLeaveAllocationService) — only the current year's row
+    // is ever editable, past years are a locked historical record.
+    public class AnnualLeaveAllocation
+    {
+        public int Id { get; set; }
+        public int Year { get; set; }
+        public decimal LeaveDays { get; set; }
+    }
+
+    public class LeaveRequest
+    {
+        public int Id { get; set; }
+        public int UserId { get; set; }
+        public User? User { get; set; }
+        public int LeaveTypeId { get; set; }
+        public LeaveType? LeaveType { get; set; }
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+        public decimal DayCount { get; set; }
+        public string Reason { get; set; } = string.Empty;
+        // "Pending" | "Approved" | "Rejected"
+        public string Status { get; set; } = "Pending";
+        public int? ApproverId { get; set; }
+        public User? Approver { get; set; }
+        public DateTime? DecisionAt { get; set; }
+        public string? DecisionNote { get; set; }
+        // Admin-controlled, only meaningful while Pending — gates whether the owning employee's
+        // Edit/Delete buttons are usable. Once Approved/Rejected the request is finalized and
+        // neither action is available regardless of these flags (enforced in LeaveService).
+        public bool AllowEdit { get; set; } = true;
+        public bool AllowDelete { get; set; } = true;
+        public DateTime CreatedAt { get; set; } = AppClock.Now;
     }
 }

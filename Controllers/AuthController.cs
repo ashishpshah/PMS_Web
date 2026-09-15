@@ -18,12 +18,14 @@ namespace TaskManagement.Controllers
         private readonly IAuthService _authService;
         private readonly PMSDbContext _context;
         private readonly IOtpService  _otpService;
+        private readonly IConfiguration _configuration;
 
-        public AuthController(IAuthService authService, PMSDbContext context, IOtpService otpService)
+        public AuthController(IAuthService authService, PMSDbContext context, IOtpService otpService, IConfiguration configuration)
         {
-            _authService = authService;
-            _context     = context;
-            _otpService  = otpService;
+            _authService   = authService;
+            _context       = context;
+            _otpService    = otpService;
+            _configuration = configuration;
         }
 
         [HttpPost("login")]
@@ -33,6 +35,7 @@ namespace TaskManagement.Controllers
             var result = await _authService.LoginAsync(loginDto);
             if (!result.Success) return Unauthorized(result);
             SetRefreshCookie(result.Data?.RefreshToken);
+            StripRefreshTokenFromBody(result);
             return Ok(result);
         }
 
@@ -42,6 +45,8 @@ namespace TaskManagement.Controllers
         {
             var result = await _authService.RegisterAsync(registerDto);
             if (!result.Success) return BadRequest(result);
+            SetRefreshCookie(result.Data?.RefreshToken);
+            StripRefreshTokenFromBody(result);
             return Ok(result);
         }
 
@@ -50,7 +55,8 @@ namespace TaskManagement.Controllers
         public async Task<ActionResult<ApiResponse<LoginResponseDto>>> Refresh(
             [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] RefreshTokenRequestDto? dto)
         {
-            // Accept refresh token from httpOnly cookie (preferred) or request body (fallback).
+            // Accept refresh token from httpOnly cookie (preferred) or request body (fallback,
+            // kept server-side for any non-browser caller — the frontend no longer sends this).
             var refreshToken = Request.Cookies["pms_rt"] ?? dto?.RefreshToken;
             if (string.IsNullOrWhiteSpace(refreshToken))
                 return BadRequest(new ApiResponse<LoginResponseDto> { Success = false, Message = "Refresh token is required." });
@@ -58,6 +64,7 @@ namespace TaskManagement.Controllers
             var result = await _authService.RefreshAsync(refreshToken);
             if (!result.Success) { ClearRefreshCookie(); return Unauthorized(result); }
             SetRefreshCookie(result.Data?.RefreshToken);
+            StripRefreshTokenFromBody(result);
             return Ok(result);
         }
 
@@ -76,18 +83,32 @@ namespace TaskManagement.Controllers
         private void SetRefreshCookie(string? token)
         {
             if (string.IsNullOrEmpty(token)) return;
+            // Mirrors the DB-side refresh token expiry (AuthService.CreateRefreshTokenAsync)
+            // instead of a hardcoded value, so the cookie never outlives (or expires long before)
+            // the token it carries.
+            var days = int.TryParse(_configuration["JwtSettings:RefreshExpiryDays"], out var d) ? d : 7;
             Response.Cookies.Append("pms_rt", token, new CookieOptions
             {
                 HttpOnly = true,
                 Secure   = Request.IsHttps,
                 SameSite = SameSiteMode.Strict,
-                MaxAge   = TimeSpan.FromDays(7),
+                MaxAge   = TimeSpan.FromDays(days),
                 Path     = "/api/auth",
             });
         }
 
         private void ClearRefreshCookie() =>
             Response.Cookies.Delete("pms_rt", new CookieOptions { Path = "/api/auth" });
+
+        // The refresh token is delivered to the browser solely via the httpOnly pms_rt cookie
+        // (set just before this runs) — it must never also appear in the JSON response body,
+        // or an XSS payload could read it straight out of the fetch() response like any other
+        // JS-readable value. Clearing it here (rather than removing the DTO property) keeps
+        // LoginResponseDto's shape stable for any other consumer.
+        private static void StripRefreshTokenFromBody(ApiResponse<LoginResponseDto> result)
+        {
+            if (result.Data != null) result.Data.RefreshToken = string.Empty;
+        }
 
         // ── OTP Register ──────────────────────────────────────────────────────
 
@@ -190,7 +211,11 @@ namespace TaskManagement.Controllers
             // (we can't call LoginAsync because the payload stores a hash, not the original password).
             await _context.Entry(user).Reference(u => u.Role).LoadAsync();
             var result = await _authService.IssueTokenAsync(user);
-            if (result.Success) SetRefreshCookie(result.Data?.RefreshToken);
+            if (result.Success)
+            {
+                SetRefreshCookie(result.Data?.RefreshToken);
+                StripRefreshTokenFromBody(result);
+            }
             return result.Success ? Ok(result) : BadRequest(result);
         }
 

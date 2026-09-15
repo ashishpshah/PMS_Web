@@ -145,6 +145,28 @@ namespace TaskManagement.Services
                     new ProjectMember { ProjectId = project.Id, UserId = vishal.Id,    RoleInProject = "Developer" }
                 );
                 await context.SaveChangesAsync();
+
+                // ── 6. Leave and Holidays module defaults ───────────────────────
+                // Singleton Rules Settings row: 10:00-19:00, 30-60min break, 1st/3rd/5th
+                // Saturday off (holiday), 2nd/4th Saturday a full working day.
+                context.WorkweekRules.Add(new WorkweekRules());
+                context.LeaveTypes.AddRange(
+                    new LeaveType { Name = "Casual Leave", IsActive = true },
+                    new LeaveType { Name = "Sick Leave",   IsActive = true },
+                    new LeaveType { Name = "Earned Leave", IsActive = true }
+                );
+                // AnnualLeaveAllocation for the current year is auto-provisioned on first read
+                // (AnnualLeaveAllocationService.GetOrCreateAsync, default 12 days) — no seed row
+                // needed here.
+                await context.SaveChangesAsync();
+
+                // Eagerly materialize the current year's Saturday-off rows against the default
+                // pattern right away, instead of leaving it to whichever page/range someone
+                // happens to view first (HolidayService.RegenerateSaturdayHolidaysAsync is
+                // otherwise purely lazy/on-demand per queried range).
+                var holidayService = scope.ServiceProvider.GetRequiredService<IHolidayService>();
+                var seedYear = AppClock.Today.Year;
+                await holidayService.RegenerateSaturdayHolidaysAsync(new DateTime(seedYear, 1, 1), new DateTime(seedYear, 12, 31));
             }
         }
 

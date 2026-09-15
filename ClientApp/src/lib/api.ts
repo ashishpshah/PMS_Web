@@ -8,7 +8,6 @@ let _accessToken: string | null = null;
 export const setAccessToken  = (token: string | null) => { _accessToken = token; };
 export const getAccessToken  = () => _accessToken;
 const getToken               = () => _accessToken;
-const getRefreshToken        = () => localStorage.getItem('pms_refresh_token');
 
 export interface ValidationError {
   field: string;
@@ -22,7 +21,6 @@ export interface ApiError extends Error {
 
 function clearAuth() {
   _accessToken = null;
-  localStorage.removeItem('pms_refresh_token');
   localStorage.removeItem('pms_user');
 }
 
@@ -33,23 +31,20 @@ export async function tryRefreshAccessToken(): Promise<string | null> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
-    // The server sets a pms_rt httpOnly cookie; the browser sends it automatically.
-    // We also send the body token as a fallback for users whose cookie was set by an older build.
-    const rt = getRefreshToken();
+    // The server sets a pms_rt httpOnly cookie; the browser sends it automatically with
+    // credentials: 'same-origin'. No refresh token is ever read from or written to
+    // localStorage/the request body — the httpOnly cookie is the only place it lives on
+    // the client, so it isn't readable by JS (and therefore not stealable via XSS).
     try {
       const res = await fetch(`${getApiUrl()}/auth/refresh`, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: rt ? JSON.stringify({ refreshToken: rt }) : undefined,
       });
       if (!res.ok) { clearAuth(); return null; }
       const json = await res.json();
       const data = json?.data ?? json;
       if (data?.token) {
         _accessToken = data.token as string;
-        // Rotate refresh token in localStorage if server returned one (legacy / first login).
-        if (data.refreshToken) localStorage.setItem('pms_refresh_token', data.refreshToken);
         return _accessToken;
       }
       clearAuth();

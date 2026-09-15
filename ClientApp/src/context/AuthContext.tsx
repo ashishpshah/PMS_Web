@@ -65,10 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       impersonatedByName: response.user.impersonatedByName,
     } as User;
 
-    // Access token stored in memory only — never in localStorage.
+    // Access token stored in memory only — never in localStorage. The refresh token is never
+    // read from the response body either: the server delivers it solely via the httpOnly
+    // pms_rt cookie, so JS never sees it (and it can't be exfiltrated via XSS/localStorage).
     setAccessToken(response.token);
-    // Refresh token stored in localStorage as fallback; server also sets an httpOnly cookie.
-    if (response.refreshToken) localStorage.setItem('pms_refresh_token', response.refreshToken);
     // Only non-sensitive identity kept in localStorage (for page-refresh UX).
     localStorage.setItem('pms_user', JSON.stringify(mappedUser));
     setUser(mappedUser);
@@ -122,8 +122,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setPagePermissions({});
     localStorage.removeItem('pms_user');
-    localStorage.removeItem('pms_token');
-    localStorage.removeItem('pms_refresh_token');
     window.location.href = '/auth';
   };
 
@@ -146,7 +144,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setPagePermissions({});
         localStorage.removeItem('pms_user');
-        localStorage.removeItem('pms_refresh_token');
         return;
       }
 
@@ -170,7 +167,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setPagePermissions({});
         localStorage.removeItem('pms_user');
-        localStorage.removeItem('pms_refresh_token');
         return;
       }
 

@@ -55,6 +55,14 @@ namespace TaskManagement.Services
                         .Include(u => u.Role)
                         .FirstOrDefaultAsync(u => u.ContactNoNormalized == digits);
                 }
+                else if (identifier.Length > 0)
+                {
+                    // Username login — case-insensitive match against the unique, indexed UserName column.
+                    var usernameLower = identifier.ToLower();
+                    user = await _context.Users
+                        .Include(u => u.Role)
+                        .FirstOrDefaultAsync(u => u.UserName.ToLower() == usernameLower);
+                }
                 else
                 {
                     user = null;
