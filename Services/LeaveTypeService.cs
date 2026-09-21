@@ -10,6 +10,7 @@ namespace TaskManagement.Services
     public interface ILeaveTypeService
     {
         Task<List<LeaveTypeDto>> GetAllAsync();
+        Task<ApiResponse<List<LeaveTypeDto>>> SearchAsync(int page = 1, int pageSize = 25, string? search = null);
         Task<ApiResponse<LeaveTypeDto>> CreateAsync(SaveLeaveTypeDto dto);
         Task<ApiResponse<LeaveTypeDto>> UpdateAsync(int id, SaveLeaveTypeDto dto);
         Task<ApiResponse<bool>> DeleteAsync(int id);
@@ -79,5 +80,38 @@ namespace TaskManagement.Services
             Name = t.Name,
             IsActive = t.IsActive,
         };
+
+        public async Task<ApiResponse<List<LeaveTypeDto>>> SearchAsync(int page = 1, int pageSize = 25, string? search = null)
+        {
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
+            var query = _context.LeaveTypes.Where(t => t.IsActive).AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim().ToLower();
+                query = query.Where(t => t.Name.ToLower().Contains(term));
+            }
+
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var types = await query
+                .OrderBy(t => t.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new ApiResponse<List<LeaveTypeDto>>
+            {
+                Success = true,
+                Data = types.Select(ToDto).ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
+        }
     }
 }

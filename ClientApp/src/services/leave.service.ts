@@ -1,4 +1,12 @@
-import { apiRequest } from '../lib/api';
+import { apiRequest, apiRequestWithMeta, PagedResult } from '../lib/api';
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
 
 export type LeaveRequestStatus = 'Pending' | 'Approved' | 'Rejected';
 export type DayType = 'Holiday' | 'WorkingDay';
@@ -105,8 +113,16 @@ export interface UpdateWorkweekRulesDto {
 
 export const leaveService = {
   // ── Requests ──────────────────────────────────────────────────────────
-  async getMyRequests(): Promise<LeaveRequest[]> {
-    return apiRequest<LeaveRequest[]>('/leave/requests/mine');
+  async getMyRequests(page = 1, pageSize = 25): Promise<PaginatedResponse<LeaveRequest>> {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    const result = await apiRequestWithMeta<LeaveRequest[]>(`/leave/requests/mine?${params.toString()}`);
+    return {
+      data: result.data,
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
   // Server-computed day count for a not-yet-submitted date range (Holiday/WorkingDay
@@ -117,12 +133,18 @@ export const leaveService = {
     return apiRequest<number>(`/leave/requests/preview?${p.toString()}`, {}, { silent: true });
   },
 
-  async getAllRequests(params?: { userId?: number; status?: string }): Promise<LeaveRequest[]> {
-    const p = new URLSearchParams();
+  async getAllRequests(params?: { userId?: number; status?: string }, page = 1, pageSize = 25): Promise<PaginatedResponse<LeaveRequest>> {
+    const p = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (params?.userId != null) p.set('userId', String(params.userId));
     if (params?.status) p.set('status', params.status);
-    const qs = p.toString();
-    return apiRequest<LeaveRequest[]>(`/leave/requests/all${qs ? `?${qs}` : ''}`);
+    const result = await apiRequestWithMeta<LeaveRequest[]>(`/leave/requests/all?${p.toString()}`);
+    return {
+      data: result.data,
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
   async createRequest(dto: CreateLeaveRequestDto): Promise<LeaveRequest> {
@@ -165,6 +187,21 @@ export const leaveService = {
   // ── Leave types (admin CRUD) ─────────────────────────────────────────
   async getTypes(): Promise<LeaveType[]> {
     return apiRequest<LeaveType[]>('/leave/types');
+  },
+
+  // For dropdowns - uses search endpoint with pagination
+  async searchTypes(page = 1, pageSize = 25, search?: string): Promise<PaginatedResponse<LeaveType>> {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) params.set('q', search);
+    
+    const result = await apiRequestWithMeta<LeaveType[]>(`/leave/types/search?${params.toString()}`);
+    return {
+      data: result.data,
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
   async createType(dto: SaveLeaveTypeDto): Promise<LeaveType> {

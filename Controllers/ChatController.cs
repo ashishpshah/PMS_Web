@@ -21,18 +21,18 @@ namespace TaskManagement.Controllers
         }
 
         [HttpGet("messages")]
-        public async Task<IActionResult> GetMessages([FromQuery] int count = 50, [FromQuery] int? beforeId = null, [FromQuery] int? roomId = null)
+        public async Task<IActionResult> GetMessages([FromQuery] int roomId, [FromQuery] int page = 1, [FromQuery] int pageSize = 25, [FromQuery] int? beforeId = null)
         {
-            var messages = await _chatService.GetRecentMessagesAsync(count, beforeId, roomId);
-            return Ok(messages);
+            var result = await _chatService.GetRecentMessagesAsync(roomId, page, pageSize, beforeId);
+            return Ok(result);
         }
 
         [HttpGet("rooms")]
-        public async Task<IActionResult> GetRooms()
+        public async Task<IActionResult> GetRooms([FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             var userId = GetUserId();
-            var rooms = await _chatService.GetRoomsForUserAsync(userId);
-            return Ok(rooms);
+            var result = await _chatService.GetRoomsForUserAsync(userId, page, pageSize);
+            return Ok(result);
         }
 
         [HttpPost("rooms")]

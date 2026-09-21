@@ -24,11 +24,20 @@ namespace TaskManagement.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<ProjectDto>>>> GetAll()
+        public async Task<ActionResult<ApiResponse<List<ProjectDto>>>> GetAll(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 25,
+            [FromQuery] string? search = null,
+            [FromQuery] string? status = null,
+            [FromQuery] int? ownerId = null,
+            [FromQuery] int? progressFrom = null,
+            [FromQuery] int? progressTo = null,
+            [FromQuery] string? sortField = null,
+            [FromQuery] string? sortDir = null)
         {
             if (!await _authService.CanViewAsync("/projects"))
                 return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view projects" });
-            var result = await _projectService.GetAllProjectsAsync();
+            var result = await _projectService.GetAllProjectsAsync(page, pageSize, search, status, ownerId, progressFrom, progressTo, sortField, sortDir);
             return Ok(result);
         }
 
@@ -78,6 +87,19 @@ namespace TaskManagement.Controllers
                 return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view projects" });
             var available = await _projectService.IsProjectNameAvailableAsync(name, excludeProjectId);
             return Ok(new ApiResponse<ProjectNameAvailabilityDto> { Success = true, Data = new ProjectNameAvailabilityDto { Available = available } });
+        }
+
+        // Search endpoint for dropdowns - returns top 25 by default, searchable by name/code
+        [HttpGet("search")]
+        public async Task<ActionResult<ApiResponse<List<ProjectDto>>>> Search(
+            [FromQuery] string? q = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 25)
+        {
+            if (!await _authService.CanViewAsync("/projects"))
+                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view projects" });
+            var result = await _projectService.SearchProjectsAsync(page, pageSize, q);
+            return Ok(result);
         }
 
         [HttpDelete("{id}")]

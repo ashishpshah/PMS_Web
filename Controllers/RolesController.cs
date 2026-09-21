@@ -23,11 +23,24 @@ namespace TaskManagement.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<RoleDto>>>> GetAll()
+        public async Task<ActionResult<ApiResponse<List<RoleDto>>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             if (!await _authService.IsAdminAsync())
                 return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view roles" });
-            var result = await _roleService.GetAllRolesAsync();
+            var result = await _roleService.GetAllRolesAsync(page, pageSize);
+            return Ok(result);
+        }
+
+        // Search endpoint for dropdowns - returns top 25 by default, searchable by name/code
+        [HttpGet("search")]
+        public async Task<ActionResult<ApiResponse<List<RoleDto>>>> Search(
+            [FromQuery] string? q = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 25)
+        {
+            if (!await _authService.IsAdminAsync())
+                return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view roles" });
+            var result = await _roleService.SearchRolesAsync(page, pageSize, q);
             return Ok(result);
         }
 

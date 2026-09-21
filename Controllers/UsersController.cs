@@ -32,11 +32,11 @@ namespace TaskManagement.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAll()
+        public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 25, [FromQuery] string? search = null, [FromQuery] bool? isActive = null, [FromQuery] bool? isDeleted = null)
         {
             if (!await _authService.IsAdminAsync())
                 return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view users" });
-            var result = await _userService.GetAllUsersAsync();
+            var result = await _userService.GetAllUsersAsync(page, pageSize, search, isActive, isDeleted);
             // Exclude SystemAdmin user (Id <= 1) from the management list
             if (result.Data != null)
             {
@@ -47,11 +47,17 @@ namespace TaskManagement.Controllers
 
         // Assignable list is available to any authenticated user (needed for task/project dropdowns)
         [HttpGet("assignable")]
-        public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAssignable()
+        public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAssignable([FromQuery] int page = 1, [FromQuery] int pageSize = 25, [FromQuery] string? search = null)
         {
-            var result = await _userService.GetAllUsersAsync();
-            if (result.Data != null)
-                result.Data = result.Data.Where(u => u.RoleId != 1 && u.IsActive && !u.IsDeleted).ToList();
+            var result = await _userService.GetAssignableUsersAsync(page, pageSize, search);
+            return Ok(result);
+        }
+
+        // Search endpoint for dropdowns - returns top 25 by default, searchable by name/email
+        [HttpGet("assignable/search")]
+        public async Task<ActionResult<ApiResponse<List<UserDto>>>> SearchAssignable([FromQuery] string? q = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
+        {
+            var result = await _userService.GetAssignableUsersAsync(page, pageSize, q);
             return Ok(result);
         }
 

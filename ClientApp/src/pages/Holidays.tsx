@@ -15,15 +15,14 @@ const DAY_TYPE_LABEL: Record<DayType, string> = {
   WorkingDay: 'Working Day',
 };
 
-// Access: IsAdmin only.
 export default function Holidays() {
   const { isAdmin, isSystemAdmin } = useAuth();
-  if (!isAdmin && !isSystemAdmin) return <Navigate to="/leaves" replace />;
+  const isAdminUser = isAdmin || isSystemAdmin;
 
-  return <HolidayListContent />;
+  return <HolidayListContent isAdmin={isAdminUser} />;
 }
 
-function HolidayListContent() {
+function HolidayListContent({ isAdmin }: { isAdmin: boolean }) {
   const currentYear = new Date().getFullYear();
   const yearOptions = useMemo(() => [currentYear, currentYear - 1, currentYear - 2, currentYear - 3], [currentYear]);
   const [year, setYear] = useState(currentYear);
@@ -125,12 +124,14 @@ function HolidayListContent() {
                 {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
-            <Button onClick={() => { resetForm(); setShowForm(true); }} className="h-9 px-4 text-[11px] font-black uppercase tracking-widest">
-              <Plus size={14} className="mr-1.5" /> Add New Holiday
-            </Button>
+            {isAdmin && (
+              <Button onClick={() => { resetForm(); setShowForm(true); }} className="h-9 px-4 text-[11px] font-black uppercase tracking-widest">
+                <Plus size={14} className="mr-1.5" /> Add New Holiday
+              </Button>
+            )}
           </div>
 
-          {showForm && (
+          {isAdmin && showForm && (
             <div className="p-4 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/40 space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-black uppercase tracking-widest text-gray-400">{editingId ? 'Edit Holiday' : 'New Holiday'}</h4>
@@ -200,8 +201,12 @@ function HolidayListContent() {
                             <span className="p-1 text-gray-300 dark:text-gray-700" title="Past holidays are locked historical records"><Lock size={14} /></span>
                           ) : (
                             <>
-                              <button onClick={() => openEditForm(h)} className="p-1 text-gray-400 hover:text-indigo-500" aria-label="Edit holiday"><Pencil size={14} /></button>
-                              <button onClick={() => handleDelete(h.id)} className="p-1 text-gray-400 hover:text-rose-500" aria-label="Delete holiday"><Trash2 size={14} /></button>
+                              {isAdmin && (
+                                <>
+                                  <button onClick={() => openEditForm(h)} className="p-1 text-gray-400 hover:text-indigo-500" aria-label="Edit holiday"><Pencil size={14} /></button>
+                                  <button onClick={() => handleDelete(h.id)} className="p-1 text-gray-400 hover:text-rose-500" aria-label="Delete holiday"><Trash2 size={14} /></button>
+                                </>
+                              )}
                             </>
                           )}
                         </div>

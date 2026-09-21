@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Users, ChevronLeft, ChevronRight, Wifi, WifiOff, Plus, Globe, Lock, MessageCircle, Hash, X, Check } from 'lucide-react';
 import { OnlineUser, User, ChatRoom } from '../../types';
 import { cn } from '../../lib/utils';
+import { VSelect, SelectOption } from '../../components/forms/VSelect';
 
 interface Props {
   allUsers: User[];
@@ -13,6 +14,10 @@ interface Props {
   onSelectRoom: (roomId: number | null) => void;
   onOpenDM: (userId: number) => void;
   onCreateRoom: (name: string, type: 'public' | 'private', memberIds: number[]) => void;
+  roomPage: number;
+  totalRooms: number;
+  totalRoomPages: number;
+  loadRoomPage: (page: number) => void;
 }
 
 type Tab = 'channels' | 'direct';
@@ -223,6 +228,45 @@ export function ChatSidebar({ allUsers, onlineUsers, rooms, activeRoomId, curren
                     <Plus size={13} />
                     <span className="text-[11px] font-semibold">New Channel</span>
                   </button>
+
+                  {/* Pagination for channels */}
+                  {totalRooms > 0 && totalRoomPages > 1 && (
+                    <div className="flex items-center justify-between px-2 py-1.5 border-t border-gray-100 dark:border-gray-800">
+                      <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                        <span className="whitespace-nowrap">Rows per page:</span>
+                        <VSelect
+                          options={[10, 25, 50, 100].map((n): SelectOption => ({ value: n, label: String(n) }))}
+                          value={{ value: roomPageSize, label: String(roomPageSize) }}
+                          onChange={opt => { if (opt) { /* Page size change would need API call */ } }}
+                          isSearchable={false}
+                          size="sm"
+                          className="w-20"
+                          disabled
+                        />
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <button onClick={() => loadRoomPage(1)} disabled={roomPage === 1}
+                          className="p-0.5 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="First">
+                          <ChevronLeft size={10} />
+                        </button>
+                        <button onClick={() => loadRoomPage(p => Math.max(1, p - 1))} disabled={roomPage === 1}
+                          className="p-0.5 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Prev">
+                          <ChevronLeft size={11} />
+                        </button>
+                        <span className="px-1.5 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-[9px] font-bold min-w-[40px] text-center">
+                          {roomPage} / {totalRoomPages}
+                        </span>
+                        <button onClick={() => loadRoomPage(p => Math.min(totalRoomPages, p + 1))} disabled={roomPage === totalRoomPages}
+                          className="p-0.5 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Next">
+                          <ChevronRight size={11} />
+                        </button>
+                        <button onClick={() => loadRoomPage(totalRoomPages)} disabled={roomPage === totalRoomPages}
+                          className="p-0.5 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Last">
+                          <ChevronRight size={10} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 

@@ -1,5 +1,13 @@
-import { apiRequest } from '../lib/api';
+import { apiRequest, apiRequestWithMeta, PagedResult } from '../lib/api';
 import { User } from '../types';
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
 
 interface ApiUserDto {
   id: number;
@@ -35,15 +43,35 @@ const mapApiUser = (apiUser: ApiUserDto): User => ({
 });
 
 export const userService = {
-  async getAll(): Promise<User[]> {
-    // if (isLocal()) return [...mockUsers];
-    const apiUsers = await apiRequest<ApiUserDto[]>('/users');
-    return apiUsers.map(mapApiUser);
+  async getAll(page = 1, pageSize = 25, search?: string, isActive?: boolean, isDeleted?: boolean): Promise<PaginatedResponse<User>> {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) params.set('search', search);
+    if (isActive !== undefined) params.set('isActive', String(isActive));
+    if (isDeleted !== undefined) params.set('isDeleted', String(isDeleted));
+    
+    const result = await apiRequestWithMeta<ApiUserDto[]>(`/users?${params.toString()}`);
+    return {
+      data: result.data.map(mapApiUser),
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
-  async getAssignable(): Promise<User[]> {
-    const apiUsers = await apiRequest<ApiUserDto[]>('/users/assignable');
-    return apiUsers.map(mapApiUser);
+  // For dropdowns - uses search endpoint with pagination
+  async getAssignable(page = 1, pageSize = 25, search?: string): Promise<PaginatedResponse<User>> {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) params.set('search', search);
+    
+    const result = await apiRequestWithMeta<ApiUserDto[]>(`/users/assignable?${params.toString()}`);
+    return {
+      data: result.data.map(mapApiUser),
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
   async create(user: User, password?: string): Promise<User> {

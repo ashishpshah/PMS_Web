@@ -25,28 +25,30 @@ namespace TaskManagement.Controllers
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<WorkDiaryDto>>>> GetMine(
             [FromQuery] int? month, [FromQuery] int? year,
-            [FromQuery] string? from, [FromQuery] string? to)
+            [FromQuery] string? from, [FromQuery] string? to,
+            [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             var userId = _authService.GetCurrentUserId();
             if (userId <= 0) return Unauthorized();
             DateTime? fromDate = null, toDate = null;
             if (!string.IsNullOrWhiteSpace(from) && DateTime.TryParse(from, out var fd)) fromDate = fd;
             if (!string.IsNullOrWhiteSpace(to)   && DateTime.TryParse(to,   out var td)) toDate   = td;
-            return Ok(await _service.GetMyDiaryAsync(userId, month, year, fromDate, toDate));
+            return Ok(await _service.GetMyDiaryAsync(userId, month, year, fromDate, toDate, page, pageSize));
         }
 
         [HttpGet("all")]
         public async Task<ActionResult<ApiResponse<List<WorkDiaryDto>>>> GetAll(
             [FromQuery] int? userId,
             [FromQuery] int? month, [FromQuery] int? year,
-            [FromQuery] string? from, [FromQuery] string? to)
+            [FromQuery] string? from, [FromQuery] string? to,
+            [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             if (!await _authService.IsAdminAsync())
                 return Forbid();
             DateTime? fromDate = null, toDate = null;
             if (!string.IsNullOrWhiteSpace(from) && DateTime.TryParse(from, out var fd)) fromDate = fd;
             if (!string.IsNullOrWhiteSpace(to)   && DateTime.TryParse(to,   out var td)) toDate   = td;
-            return Ok(await _service.GetAllDiaryAsync(userId, month, year, fromDate, toDate));
+            return Ok(await _service.GetAllDiaryAsync(userId, month, year, fromDate, toDate, page, pageSize));
         }
 
         [HttpGet("categories")]

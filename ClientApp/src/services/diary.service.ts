@@ -1,4 +1,12 @@
-import { apiRequest } from '../lib/api';
+import { apiRequest, apiRequestWithMeta } from '../lib/api';
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
 
 export interface WorkDiaryEntry {
   id: number;
@@ -46,25 +54,47 @@ export const diaryService = {
     return apiRequest<DiaryProjectOption[]>('/workdiary/projects');
   },
 
-  async getMyDiary(params?: { month?: number; year?: number; from?: string; to?: string }, silent = false): Promise<WorkDiaryEntry[]> {
+  async getMyDiary(params?: { month?: number; year?: number; from?: string; to?: string; page?: number; pageSize?: number }, silent = false): Promise<PaginatedResponse<WorkDiaryEntry>> {
     const p = new URLSearchParams();
+    if (params?.page) p.set('page', String(params.page));
+    else p.set('page', '1');
+    if (params?.pageSize) p.set('pageSize', String(params.pageSize));
+    else p.set('pageSize', '25');
     if (params?.from) { p.set('from', params.from); }
     else if (params?.month != null) p.set('month', String(params.month));
     if (params?.to)   { p.set('to',   params.to);   }
     else if (params?.year  != null) p.set('year',  String(params.year));
     const qs = p.toString();
-    return apiRequest<WorkDiaryEntry[]>(`/workdiary${qs ? `?${qs}` : ''}`, {}, { silent });
+    const result = await apiRequestWithMeta<WorkDiaryEntry[]>(`/workdiary${qs ? `?${qs}` : ''}`, {}, { silent });
+    return {
+      data: result.data,
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
-  async getAllDiary(params?: { userId?: number; month?: number; year?: number; from?: string; to?: string }, silent = false): Promise<WorkDiaryEntry[]> {
+  async getAllDiary(params?: { userId?: number; month?: number; year?: number; from?: string; to?: string; page?: number; pageSize?: number }, silent = false): Promise<PaginatedResponse<WorkDiaryEntry>> {
     const p = new URLSearchParams();
+    if (params?.page) p.set('page', String(params.page));
+    else p.set('page', '1');
+    if (params?.pageSize) p.set('pageSize', String(params.pageSize));
+    else p.set('pageSize', '25');
     if (params?.userId != null) p.set('userId', String(params.userId));
     if (params?.from) { p.set('from', params.from); }
     else if (params?.month != null) p.set('month', String(params.month));
     if (params?.to)   { p.set('to',   params.to);   }
     else if (params?.year  != null) p.set('year',  String(params.year));
     const qs = p.toString();
-    return apiRequest<WorkDiaryEntry[]>(`/workdiary/all${qs ? `?${qs}` : ''}`, {}, { silent });
+    const result = await apiRequestWithMeta<WorkDiaryEntry[]>(`/workdiary/all${qs ? `?${qs}` : ''}`, {}, { silent });
+    return {
+      data: result.data,
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
   async add(dto: CreateWorkDiaryDto): Promise<WorkDiaryEntry> {

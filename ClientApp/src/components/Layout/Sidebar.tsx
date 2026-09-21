@@ -73,7 +73,7 @@ export function Sidebar({ isCollapsed, setIsCollapsed, isMobileMenuOpen, setIsMo
       children: [
         { name: 'Calendar', icon: CalendarDays, href: '/calendar', alwaysShow: true },
         { name: 'Leaves', icon: CalendarCheck, href: '/leaves', alwaysShow: true },
-        { name: 'Holidays', icon: ListChecks, href: '/holidays', adminOnly: true },
+        { name: 'Holidays', icon: ListChecks, href: '/holidays', alwaysShow: true },
         { name: 'Leave Type', icon: Tag, href: '/leave-types', adminOnly: true },
       ],
     },
@@ -86,7 +86,7 @@ export function Sidebar({ isCollapsed, setIsCollapsed, isMobileMenuOpen, setIsMo
       ],
     },
     { name: 'Chat', icon: MessageSquare, href: '/chat', alwaysShow: true },
-    { name: 'Settings', icon: Settings, href: '/settings', requiredPermission: '/settings' },
+    { name: 'Settings', icon: Settings, href: '/settings', alwaysShow: true },
   ];
 
   const renderLeaf = (item: NavLeaf) => (

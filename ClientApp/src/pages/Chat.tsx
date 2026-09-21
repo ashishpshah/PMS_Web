@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MessageSquare, Globe, Lock, Hash } from 'lucide-react';
+import { MessageSquare, Globe, Lock, Hash, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -9,6 +9,7 @@ import { MessageList } from '../components/Chat/MessageList';
 import { MessageInput } from '../components/Chat/MessageInput';
 import { TypingIndicator } from '../components/Chat/TypingIndicator';
 import { ChatMessage } from '../types';
+import { VSelect, SelectOption } from '../components/forms/VSelect';
 
 export default function Chat() {
   const { user } = useAuth();
@@ -32,6 +33,10 @@ export default function Chat() {
     createRoom,
     openDirectMessage,
     loadRoomMessages,
+    roomPage,
+    totalRooms,
+    totalRoomPages,
+    loadRoomPage,
   } = useChat();
 
   usePushNotifications();

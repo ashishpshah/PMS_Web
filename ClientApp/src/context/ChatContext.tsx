@@ -11,7 +11,7 @@ import { useLocation } from 'react-router-dom';
 import { ChatMessage, OnlineUser, ChatRoom } from '../types';
 import { useAuth } from './AuthContext';
 import { useData } from './DataContext';
-import { apiRequest, getAccessToken, tryRefreshAccessToken } from '../lib/api';
+import { apiRequest, apiRequestWithMeta, getAccessToken, tryRefreshAccessToken } from '../lib/api';
 
 interface TypingUser {
   userId: number;
@@ -42,6 +42,11 @@ interface ChatContextType {
   createRoom: (name: string, type: 'public' | 'private', memberIds: number[]) => Promise<ChatRoom>;
   openDirectMessage: (otherUserId: number) => Promise<ChatRoom>;
   loadRoomMessages: (roomId: number) => Promise<void>;
+  // Room pagination
+  roomPage: number;
+  totalRooms: number;
+  totalRoomPages: number;
+  loadRoomPage: (page: number) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -110,12 +115,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadRooms = useCallback(async () => {
+  // Server-side pagination state for rooms
+  const [roomPage, setRoomPage] = useState(1);
+  const [roomPageSize, setRoomPageSize] = useState(25);
+  const [totalRooms, setTotalRooms] = useState(0);
+  const [totalRoomPages, setTotalRoomPages] = useState(1);
+
+  const loadRooms = useCallback(async (page = 1, pageSize = 25) => {
     try {
-      const data = await apiRequest<ChatRoom[]>('/chat/rooms');
-      setRooms(data);
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      const result = await apiRequestWithMeta<ChatRoom[]>(`/chat/rooms?${params.toString()}`);
+      setRooms(result.data);
+      setTotalRooms(result.meta.totalCount);
+      setTotalRoomPages(result.meta.totalPages);
     } catch { /* silent */ }
   }, []);
+
+  const loadRoomPage = useCallback(async (page: number) => {
+    await loadRooms(page, roomPageSize);
+    setRoomPage(page);
+  }, [roomPageSize]);
 
   useEffect(() => {
     // Wait until auth is ready so the in-memory access token exists before connecting.
@@ -193,7 +212,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         await connection.start();
         if (!cancelled) {
           setIsConnected(true);
-          await Promise.all([loadHistory(), loadRooms()]);
+          await Promise.all([loadHistory(), loadRooms(1, 25)]);
         }
       } catch {
         if (!cancelled) setIsConnected(false);
@@ -320,6 +339,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       createRoom,
       openDirectMessage,
       loadRoomMessages,
+      // Room pagination
+      roomPage,
+      totalRooms,
+      totalRoomPages,
+      loadRoomPage,
     }}>
       {children}
     </ChatContext.Provider>

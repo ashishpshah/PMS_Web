@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Search, Mail, Trash2, Edit2, LayoutGrid, List, Upload, Camera, Phone, Copy, Check, X, UserCheck, UserX, RotateCcw } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Plus, Search, Mail, Trash2, Edit2, LayoutGrid, List, Upload, Camera, Phone, Copy, Check, X, UserCheck, UserX, RotateCcw, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
 import { roleService } from '../services/role.service';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -15,13 +15,13 @@ import { Badge } from '../components/ui/Badge';
 import { InteractiveLink } from '../components/ui/InteractiveLink';
 import { PageHeader } from '../components/ui/PageHeader';
 import { EmptyState } from '../components/ui/EmptyState';
-import { Users as UsersIcon } from 'lucide-react';
 import { PageTransition } from '../components/Layout/PageTransition';
 import { useSweetAlert } from '../context/SweetAlertContext';
 import { showError, showSuccess } from '../lib/toast';
 import { usePermissions } from '../hooks/usePermissions';
 import { useValidationErrors } from '../hooks/useValidationErrors';
 import type { AvailabilityState } from '../hooks/useAvailability';
+import { userService, PaginatedResponse } from '../services/user.service';
 
 type StatusFilter = 'active' | 'inactive' | 'deleted';
 
@@ -45,7 +45,7 @@ function StatusBadge({ user }: { user: User }) {
 }
 
 export default function Users() {
-  const { users, tasks, projects, addUser, updateUser, deleteUser, setUserActive, reactivateUser, addActivity } = useData();
+  const { tasks, projects } = useData();
   const { isSystemAdmin } = useAuth();
   const { canCreate: _canCreate, canUpdate: _canUpdate, canDelete: _canDelete } = usePermissions();
   const canCreateUser  = _canCreate('/users');
@@ -67,6 +67,14 @@ export default function Users() {
   const { showAlert, confirmAlert } = useSweetAlert();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Server-side pagination state
+  const [users, setUsers] = useState<User[]>([]);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [totalUserPages, setTotalUserPages] = useState(1);
+  const [userPage, setUserPage] = useState(1);
+  const [userPageSize, setUserPageSize] = useState(25);
+  const [usersLoading, setUsersLoading] = useState(false);
+
   const emailAvail = useAvailability(emailValue, {
     field: 'email',
     enabled: isModalOpen && !validateEmail(emailValue),
@@ -79,6 +87,36 @@ export default function Users() {
     roleService.getAll().then(setRoles).catch(() => {});
   }, []);
 
+  // Fetch users with server-side pagination
+  const fetchUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const isActive = statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined;
+      const isDeleted = statusFilter === 'deleted' ? true : undefined;
+      
+      const result = await userService.getAll(userPage, userPageSize, searchQuery || undefined, isActive, isDeleted);
+      setUsers(result.data);
+      setTotalUsers(result.totalCount);
+      setTotalUserPages(result.totalPages);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to load users');
+      setUsers([]);
+      setTotalUsers(0);
+      setTotalUserPages(1);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [userPage, userPageSize, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setUserPage(1);
+  }, [searchQuery, statusFilter]);
+
   const handleCopy = async (text: string, field: string) => {
     const success = await copyToClipboard(text);
     if (success) {
@@ -86,23 +124,6 @@ export default function Users() {
       setTimeout(() => setCopiedField(null), 1500);
     }
   };
-
-  // Apply status filter then search
-  const filteredUsers = users.filter(u => {
-    // Status gate
-    if (statusFilter === 'active'   && (u.isDeleted || !u.isActive)) return false;
-    if (statusFilter === 'inactive' && (u.isDeleted || u.isActive !== false)) return false;
-    if (statusFilter === 'deleted'  && !u.isDeleted) return false;
-
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      (u.name?.toLowerCase() || '').includes(q) ||
-      (u.email?.toLowerCase() || '').includes(q) ||
-      (u.role?.toLowerCase() || '').includes(q) ||
-      (u.contactNo?.toLowerCase() || '').includes(q)
-    );
-  });
 
   const getUserStats = (userId: number) => {
     const userTasks = tasks.filter(t => t.assigneeId === userId);
@@ -348,7 +369,7 @@ export default function Users() {
           </CardContent>
         </Card>
 
-        {filteredUsers.length === 0 ? (
+        {users.length === 0 ? (
           <EmptyState
             icon={UsersIcon}
             title="No members found"
@@ -358,7 +379,7 @@ export default function Users() {
           />
         ) : view === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {filteredUsers.map((user) => (
+            {users.map((user) => (
               <Card
                 key={user.id}
                 className={cn(
@@ -451,7 +472,7 @@ export default function Users() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
-                  {filteredUsers.map((user) => (
+                  {users.map((user) => (
                     <tr
                       key={user.id}
                       className={cn(
@@ -487,6 +508,47 @@ export default function Users() {
             </div>
           </Card>
         )}
+
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-50 dark:border-gray-900 bg-gray-50/30 dark:bg-gray-900/30">
+          <div className="flex items-center gap-2 text-[11px] text-gray-500">
+            <span className="whitespace-nowrap">Rows per page:</span>
+            <VSelect
+              options={[10, 25, 50, 100].map((n): SelectOption => ({ value: n, label: String(n) }))}
+              value={{ value: userPageSize, label: String(userPageSize) }}
+              onChange={opt => { if (opt) { setUserPageSize(Number(opt.value)); setUserPage(1); } }}
+              isSearchable={false}
+              size="sm"
+              className="w-20"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <span className="whitespace-nowrap">
+              {totalUsers === 0 ? '0' : `${(userPage - 1) * userPageSize + 1}–${Math.min(userPage * userPageSize, totalUsers)}`} of {totalUsers}
+            </span>
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setUserPage(1)} disabled={userPage === 1}
+                className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="First">
+                <ChevronLeft size={11} />
+              </button>
+              <button onClick={() => setUserPage(p => Math.max(1, p - 1))} disabled={userPage === 1}
+                className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Prev">
+                <ChevronLeft size={13} />
+              </button>
+              <span className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-[11px] font-bold min-w-[60px] text-center">
+                {userPage} / {totalUserPages}
+              </span>
+              <button onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))} disabled={userPage === totalUserPages}
+                className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Next">
+                <ChevronRight size={13} />
+              </button>
+              <button onClick={() => setUserPage(totalUserPages)} disabled={userPage === totalUserPages}
+                className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Last">
+                <ChevronRight size={11} />
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* Add / Edit modal */}
         <Modal

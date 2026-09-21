@@ -17,8 +17,8 @@ namespace TaskManagement.Services
         Task<ApiResponse<decimal>> PreviewDayCountAsync(DateTime start, DateTime end);
         Task<ApiResponse<LeaveRequestDto>> RequestAsync(int userId, CreateLeaveRequestDto dto);
         Task<ApiResponse<LeaveRequestDto>> UpdateAsync(int userId, int requestId, UpdateLeaveRequestDto dto);
-        Task<ApiResponse<List<LeaveRequestDto>>> GetMyRequestsAsync(int userId);
-        Task<ApiResponse<List<LeaveRequestDto>>> GetAllRequestsAsync(int? filterUserId, string? filterStatus);
+        Task<ApiResponse<List<LeaveRequestDto>>> GetMyRequestsAsync(int userId, int page = 1, int pageSize = 25);
+        Task<ApiResponse<List<LeaveRequestDto>>> GetAllRequestsAsync(int? filterUserId, string? filterStatus, int page = 1, int pageSize = 25);
         Task<ApiResponse<LeaveRequestDto>> DecideAsync(int approverId, int requestId, DecideLeaveRequestDto dto);
         Task<ApiResponse<bool>> DeleteAsync(int userId, int requestId);
         Task<ApiResponse<LeaveRequestDto>> SetPermissionsAsync(int requestId, SetLeaveRequestPermissionsDto dto);
@@ -162,19 +162,40 @@ namespace TaskManagement.Services
             return new ApiResponse<LeaveRequestDto> { Success = true, Data = ToDto(request) };
         }
 
-        public async Task<ApiResponse<List<LeaveRequestDto>>> GetMyRequestsAsync(int userId)
+        public async Task<ApiResponse<List<LeaveRequestDto>>> GetMyRequestsAsync(int userId, int page = 1, int pageSize = 25)
         {
-            var list = await _context.LeaveRequests
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
+            var query = _context.LeaveRequests
                 .Include(r => r.User).Include(r => r.LeaveType).Include(r => r.Approver)
                 .Where(r => r.UserId == userId)
-                .OrderByDescending(r => r.CreatedAt)
+                .OrderByDescending(r => r.CreatedAt);
+
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var list = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return new ApiResponse<List<LeaveRequestDto>> { Success = true, Data = list.Select(ToDto).ToList() };
+            return new ApiResponse<List<LeaveRequestDto>>
+            {
+                Success = true,
+                Data = list.Select(ToDto).ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
 
-        public async Task<ApiResponse<List<LeaveRequestDto>>> GetAllRequestsAsync(int? filterUserId, string? filterStatus)
+        public async Task<ApiResponse<List<LeaveRequestDto>>> GetAllRequestsAsync(int? filterUserId, string? filterStatus, int page = 1, int pageSize = 25)
         {
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
             var query = _context.LeaveRequests
                 .Include(r => r.User).Include(r => r.LeaveType).Include(r => r.Approver)
                 .AsQueryable();
@@ -182,8 +203,24 @@ namespace TaskManagement.Services
             if (filterUserId.HasValue) query = query.Where(r => r.UserId == filterUserId.Value);
             if (!string.IsNullOrWhiteSpace(filterStatus)) query = query.Where(r => r.Status == filterStatus);
 
-            var list = await query.OrderByDescending(r => r.CreatedAt).ToListAsync();
-            return new ApiResponse<List<LeaveRequestDto>> { Success = true, Data = list.Select(ToDto).ToList() };
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var list = await query
+                .OrderByDescending(r => r.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new ApiResponse<List<LeaveRequestDto>>
+            {
+                Success = true,
+                Data = list.Select(ToDto).ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
 
         public async Task<ApiResponse<LeaveRequestDto>> DecideAsync(int approverId, int requestId, DecideLeaveRequestDto dto)

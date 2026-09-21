@@ -15,6 +15,7 @@ import {
   diaryService,
   WorkDiaryEntry,
   DiaryProjectOption,
+  PaginatedResponse,
 } from '../services/diary.service';
 import { isAllowedDiaryDate, getPreviousWorkingDay } from '../lib/diaryDateUtils';
 import { cn, formatDate, fromHHMM, toHHMM } from '../lib/utils';
@@ -81,7 +82,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Other:         'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
 };
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 25;
 
 interface RowData {
   description: string;
@@ -125,7 +126,11 @@ export default function Diary() {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedUserId, setSelectedUserId]     = useState<number | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  // Server-side pagination
   const [page, setPage]                 = useState(1);
+  const [pageSize, setPageSize]         = useState(25);
+  const [totalEntries, setTotalEntries] = useState(0);
+  const [totalPages, setTotalPages]     = useState(1);
 
   // entries
   const [entries, setEntries]   = useState<WorkDiaryEntry[]>([]);
@@ -144,10 +149,12 @@ export default function Diary() {
     setLoading(true);
     try {
       const data = isAdminView
-        ? await diaryService.getAllDiary({ userId: selectedUserId ?? undefined, from, to })
-        : await diaryService.getMyDiary({ from, to });
-      setEntries(data);
-      setPage(1);
+        ? await diaryService.getAllDiary({ userId: selectedUserId ?? undefined, from, to, page, pageSize })
+        : await diaryService.getMyDiary({ from, to, page, pageSize });
+      setEntries(data.data);
+      setTotalEntries(data.totalCount);
+      setTotalPages(data.totalPages);
+      setPage(data.page);
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to load diary entries.');
     } finally {
@@ -250,8 +257,6 @@ export default function Diary() {
     );
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalSpent = filtered.reduce((sum, e) => sum + (e.hoursSpent ?? 0), 0);
 
   const SEL_CLS = 'text-sm border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500';
@@ -630,7 +635,7 @@ export default function Diary() {
                 <tfoot className="border-t-2 border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30">
                   <tr>
                     <td colSpan={isAdminView ? 5 : 4} className="px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      Total — {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
+                      Total — {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-1 text-[12px] text-indigo-600 dark:text-indigo-400 font-black">
@@ -647,7 +652,7 @@ export default function Diary() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-50 dark:border-gray-900">
                 <span className="text-[11px] font-bold text-gray-400">
-                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalEntries)} of {totalEntries}
                 </span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1 rounded text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
@@ -655,7 +660,7 @@ export default function Diary() {
                   </button>
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
-                    .reduce<(number | '…')[]>((acc, n, idx, arr) => {
+.reduce<(number | '…')[]>((acc, n, idx, arr) => {
                       if (idx > 0 && (arr[idx - 1] as number) + 1 < n) acc.push('…');
                       acc.push(n);
                       return acc;
@@ -671,8 +676,9 @@ export default function Diary() {
                         >
                           {n}
                         </button>
-                      )
-                    )}
+)
+                    )
+                  }
                   <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1 rounded text-gray-400 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                     <ChevronRight size={15} />
                   </button>

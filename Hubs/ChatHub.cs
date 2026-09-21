@@ -38,7 +38,8 @@ namespace TaskManagement.Hubs
             await Clients.Caller.SendAsync("OnlineUsers", _tracker.GetAll());
 
             // Join SignalR groups for all rooms the user is a member of
-            var rooms = await _chatService.GetRoomsForUserAsync(userId);
+            var roomsResult = await _chatService.GetRoomsForUserAsync(userId);
+            var rooms = roomsResult.Data ?? new List<ChatRoomDto>();
             foreach (var room in rooms)
                 await Groups.AddToGroupAsync(Context.ConnectionId, RoomGroup(room.Id));
 

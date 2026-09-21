@@ -45,18 +45,18 @@ namespace TaskManagement.Controllers
         // ── Leave requests ──────────────────────────────────────────────────
 
         [HttpGet("requests/mine")]
-        public async Task<ActionResult<ApiResponse<List<LeaveRequestDto>>>> GetMyRequests()
+        public async Task<ActionResult<ApiResponse<List<LeaveRequestDto>>>> GetMyRequests([FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             var userId = _authService.GetCurrentUserId();
             if (userId <= 0) return Unauthorized();
-            return Ok(await _leaveService.GetMyRequestsAsync(userId));
+            return Ok(await _leaveService.GetMyRequestsAsync(userId, page, pageSize));
         }
 
         [HttpGet("requests/all")]
-        public async Task<ActionResult<ApiResponse<List<LeaveRequestDto>>>> GetAllRequests([FromQuery] int? userId, [FromQuery] string? status)
+        public async Task<ActionResult<ApiResponse<List<LeaveRequestDto>>>> GetAllRequests([FromQuery] int? userId, [FromQuery] string? status, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
         {
             if (!await _authService.IsAdminAsync()) return Forbid();
-            return Ok(await _leaveService.GetAllRequestsAsync(userId, status));
+            return Ok(await _leaveService.GetAllRequestsAsync(userId, status, page, pageSize));
         }
 
         [HttpGet("requests/preview")]
@@ -124,13 +124,24 @@ namespace TaskManagement.Controllers
             return Ok(await _leaveService.GetMyBalanceAsync(userId));
         }
 
-        // ── Leave types (admin CRUD) ────────────────────────────────────────
-
-        [HttpGet("types")]
-        public async Task<ActionResult<ApiResponse<List<LeaveTypeDto>>>> GetTypes() =>
-            Ok(new ApiResponse<List<LeaveTypeDto>> { Success = true, Data = await _leaveTypeService.GetAllAsync() });
-
-        [HttpPost("types")]
+// ── Leave types (admin CRUD) ────────────────────────────────────────
+ 
+         [HttpGet("types")]
+         public async Task<ActionResult<ApiResponse<List<LeaveTypeDto>>>> GetTypes() =>
+             Ok(new ApiResponse<List<LeaveTypeDto>> { Success = true, Data = await _leaveTypeService.GetAllAsync() });
+ 
+         // Search endpoint for dropdowns - returns top 25 by default, searchable by name
+         [HttpGet("types/search")]
+         public async Task<ActionResult<ApiResponse<List<LeaveTypeDto>>>> SearchTypes(
+             [FromQuery] string? q = null,
+             [FromQuery] int page = 1,
+             [FromQuery] int pageSize = 25)
+         {
+             var result = await _leaveTypeService.SearchAsync(page, pageSize, q);
+             return Ok(result);
+         }
+ 
+         [HttpPost("types")]
         public async Task<ActionResult<ApiResponse<LeaveTypeDto>>> CreateType([FromBody] SaveLeaveTypeDto dto)
         {
             if (!await _authService.IsAdminAsync()) return Forbid();

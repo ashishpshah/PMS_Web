@@ -1,5 +1,13 @@
-import { apiRequest } from '../lib/api';
+import { apiRequest, apiRequestWithMeta } from '../lib/api';
 import { Project, ProjectMember, ProjectAssignmentHistory, ReasonTag } from '../types';
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
 
 interface ApiProjectAssignmentHistoryDto {
   id: number;
@@ -90,10 +98,48 @@ const mapProjectToApi = (project: Project) => ({
   modules: project.modules ?? [],
 });
 
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export const projectService = {
-  async getAll(): Promise<Project[]> {
-    const dtos = await apiRequest<ApiProjectDto[]>('/projects');
-    return dtos.map(mapApiProject);
+  async getAll(page = 1, pageSize = 25, search?: string, status?: string, ownerId?: number, progressFrom?: number, progressTo?: number, sortField?: string, sortDir?: string): Promise<PaginatedResponse<Project>> {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    if (ownerId) params.set('ownerId', String(ownerId));
+    if (progressFrom !== undefined) params.set('progressFrom', String(progressFrom));
+    if (progressTo !== undefined) params.set('progressTo', String(progressTo));
+    if (sortField) params.set('sortField', sortField);
+    if (sortDir) params.set('sortDir', sortDir);
+    
+    const result = await apiRequestWithMeta<ApiProjectDto[]>(`/projects?${params.toString()}`);
+    return {
+      data: result.data.map(mapApiProject),
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
+  },
+
+  // For dropdowns - uses search endpoint with pagination
+  async search(page = 1, pageSize = 25, search?: string): Promise<PaginatedResponse<Project>> {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) params.set('q', search);
+    
+    const result = await apiRequestWithMeta<ApiProjectDto[]>(`/projects/search?${params.toString()}`);
+    return {
+      data: result.data.map(mapApiProject),
+      totalCount: result.meta.totalCount,
+      page: result.meta.page,
+      pageSize: result.meta.pageSize,
+      totalPages: result.meta.totalPages,
+    };
   },
 
   async getById(id: number): Promise<Project> {

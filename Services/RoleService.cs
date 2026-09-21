@@ -11,7 +11,8 @@ namespace TaskManagement.Services
 {
     public interface IRoleService
     {
-        Task<ApiResponse<List<RoleDto>>> GetAllRolesAsync();
+        Task<ApiResponse<List<RoleDto>>> GetAllRolesAsync(int page = 1, int pageSize = 25);
+        Task<ApiResponse<List<RoleDto>>> SearchRolesAsync(int page = 1, int pageSize = 25, string? search = null);
         Task<ApiResponse<RoleDto>> GetRoleByIdAsync(int id);
         Task<ApiResponse<RoleDto>> SaveRoleAsync(RoleDto roleDto);
         Task<ApiResponse<bool>> DeleteRoleAsync(int id);
@@ -28,10 +29,32 @@ namespace TaskManagement.Services
             _mapper = mapper;
         }
 
-        public async Task<ApiResponse<List<RoleDto>>> GetAllRolesAsync()
+        public async Task<ApiResponse<List<RoleDto>>> GetAllRolesAsync(int page = 1, int pageSize = 25)
         {
-            var roles = await _context.Roles.Where(r => r.Id > 1).ToListAsync();
-            return new ApiResponse<List<RoleDto>> { Success = true, Data = _mapper.Map<List<RoleDto>>(roles) };
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
+            var query = _context.Roles.Where(r => r.Id > 1).AsQueryable();
+
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var roles = await query
+                .OrderBy(r => r.Level)
+                .ThenBy(r => r.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new ApiResponse<List<RoleDto>>
+            {
+                Success = true,
+                Data = _mapper.Map<List<RoleDto>>(roles),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
 
         public async Task<ApiResponse<RoleDto>> GetRoleByIdAsync(int id)
@@ -85,6 +108,41 @@ namespace TaskManagement.Services
             _context.Roles.Remove(role);
             await _context.SaveChangesAsync();
             return new ApiResponse<bool> { Success = true, Data = true };
+        }
+
+        public async Task<ApiResponse<List<RoleDto>>> SearchRolesAsync(int page = 1, int pageSize = 25, string? search = null)
+        {
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
+            var query = _context.Roles.Where(r => r.Id > 1).AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim().ToLower();
+                query = query.Where(r => r.Name.ToLower().Contains(term) ||
+                                       (r.Code != null && r.Code.ToLower().Contains(term)));
+            }
+
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var roles = await query
+                .OrderBy(r => r.Level)
+                .ThenBy(r => r.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new ApiResponse<List<RoleDto>>
+            {
+                Success = true,
+                Data = _mapper.Map<List<RoleDto>>(roles),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
     }
 }

@@ -15,8 +15,8 @@ namespace TaskManagement.Services
     {
         string[] Categories { get; }
         Task<List<WorkDiaryProjectOptionDto>> GetProjectOptionsAsync();
-        Task<ApiResponse<List<WorkDiaryDto>>> GetMyDiaryAsync(int userId, int? month, int? year, DateTime? from = null, DateTime? to = null);
-        Task<ApiResponse<List<WorkDiaryDto>>> GetAllDiaryAsync(int? filterUserId, int? month, int? year, DateTime? from = null, DateTime? to = null);
+        Task<ApiResponse<List<WorkDiaryDto>>> GetMyDiaryAsync(int userId, int? month, int? year, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 25);
+        Task<ApiResponse<List<WorkDiaryDto>>> GetAllDiaryAsync(int? filterUserId, int? month, int? year, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 25);
         Task<ApiResponse<WorkDiaryDto>> AddEntryAsync(int userId, CreateWorkDiaryDto dto);
         Task<ApiResponse<WorkDiaryDto>> UpdateEntryAsync(int userId, int id, UpdateWorkDiaryDto dto);
         Task<ApiResponse<bool>> DeleteEntryAsync(int userId, int id);
@@ -126,8 +126,11 @@ namespace TaskManagement.Services
                 .ToListAsync();
         }
 
-        public async Task<ApiResponse<List<WorkDiaryDto>>> GetMyDiaryAsync(int userId, int? month, int? year, DateTime? from = null, DateTime? to = null)
+        public async Task<ApiResponse<List<WorkDiaryDto>>> GetMyDiaryAsync(int userId, int? month, int? year, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 25)
         {
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
             var query = _context.WorkDiaries
                 .Include(wd => wd.User)
                 .Include(wd => wd.Project)
@@ -135,16 +138,32 @@ namespace TaskManagement.Services
 
             query = ApplyDateFilter(query, month, year, from, to);
 
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
             var list = await query
                 .OrderByDescending(wd => wd.Date)
                 .ThenByDescending(wd => wd.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return new ApiResponse<List<WorkDiaryDto>> { Success = true, Data = list.Select(ToDto).ToList() };
+            return new ApiResponse<List<WorkDiaryDto>>
+            {
+                Success = true,
+                Data = list.Select(ToDto).ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
 
-        public async Task<ApiResponse<List<WorkDiaryDto>>> GetAllDiaryAsync(int? filterUserId, int? month, int? year, DateTime? from = null, DateTime? to = null)
+        public async Task<ApiResponse<List<WorkDiaryDto>>> GetAllDiaryAsync(int? filterUserId, int? month, int? year, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 25)
         {
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
             var query = _context.WorkDiaries.Include(wd => wd.User).Include(wd => wd.Project).AsQueryable();
 
             if (filterUserId.HasValue)
@@ -152,12 +171,25 @@ namespace TaskManagement.Services
 
             query = ApplyDateFilter(query, month, year, from, to);
 
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
             var list = await query
                 .OrderByDescending(wd => wd.Date)
                 .ThenByDescending(wd => wd.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return new ApiResponse<List<WorkDiaryDto>> { Success = true, Data = list.Select(ToDto).ToList() };
+            return new ApiResponse<List<WorkDiaryDto>>
+            {
+                Success = true,
+                Data = list.Select(ToDto).ToList(),
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
 
         private static IQueryable<WorkDiary> ApplyDateFilter(IQueryable<WorkDiary> query, int? month, int? year, DateTime? from, DateTime? to)

@@ -13,7 +13,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { showSuccess, showError } from '../lib/toast';
 import { cn } from '../lib/utils';
 import { fromIso, toIso, todayMidnight, formatDMY, buildMonthYearOptions } from '../lib/leaveDateUtils';
-import { leaveService, LeaveRequest, LeaveType, LeaveBalance, DayType } from '../services/leave.service';
+import { leaveService, LeaveRequest, LeaveType, LeaveBalance, DayType, PaginatedResponse } from '../services/leave.service';
 import { X, Check, Plus, Pencil, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const STATUS_VARIANT: Record<string, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
@@ -99,9 +99,11 @@ export default function Leaves() {
   const [sortField, setSortField] = useState<SortField>('startDate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Table pagination
+  // Server-side pagination
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(25);
+  const [totalRequests, setTotalRequests] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const monthYearOptions = useMemo(() => buildMonthYearOptions(), []);
 
@@ -110,14 +112,20 @@ export default function Leaves() {
     try {
       const today = todayMidnight();
       const oneYearOut = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+      const params: { userId?: number; status?: string } = {};
+      if (selectedUserId) params.userId = selectedUserId;
+      // Could add status filter based on UI if needed
+      
       const [r, b, t, rules, holidays] = await Promise.all([
-        isAdminView ? leaveService.getAllRequests() : leaveService.getMyRequests(),
+        isAdminView ? leaveService.getAllRequests(params, page, pageSize) : leaveService.getMyRequests(page, pageSize),
         leaveService.getMyBalance(),
         leaveService.getTypes(),
         leaveService.getRules(),
         leaveService.getHolidays(toIso(today), toIso(oneYearOut)),
       ]);
-      setRequests(r);
+      setRequests(r.data);
+      setTotalRequests(r.totalCount);
+      setTotalPages(r.totalPages);
       setBalance(b);
       setTypes(t);
       setSaturdayOccurrences(rules.holidaySaturdayOccurrences);
@@ -127,9 +135,14 @@ export default function Leaves() {
     } finally {
       setLoading(false);
     }
-  }, [isAdminView]);
+  }, [isAdminView, page, pageSize, selectedUserId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [selectedUserId]);
 
   const resetForm = () => {
     setShowForm(false);
@@ -277,6 +290,9 @@ export default function Leaves() {
     return true;
   }), [requests, isAdminView, selectedUserId, fromMonthYear, toMonthYear]);
 
+  // Server handles pagination and sorting, so we just use the requests as returned
+  // For display purposes, we still apply client-side filtering for the filter controls
+  // but the actual data is already paginated from the server
   const sortedRequests = useMemo(() => {
     const arr = [...filteredRequests];
     arr.sort((a, b) => {
@@ -294,9 +310,8 @@ export default function Leaves() {
     return arr;
   }, [filteredRequests, sortField, sortOrder]);
 
-  const totalPages = Math.max(1, Math.ceil(sortedRequests.length / pageSize));
-  const clampedPage = Math.min(page, totalPages);
-  const pagedRequests = sortedRequests.slice((clampedPage - 1) * pageSize, clampedPage * pageSize);
+  // For display, use sortedRequests directly (already paginated from server)
+  const pagedRequests = sortedRequests;
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortOrder(o => (o === 'asc' ? 'desc' : 'asc'));
@@ -619,17 +634,25 @@ export default function Leaves() {
                 </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
                   <span className="whitespace-nowrap">
-                    {sortedRequests.length === 0 ? '0' : `${(clampedPage - 1) * pageSize + 1}–${Math.min(clampedPage * pageSize, sortedRequests.length)}`} of {sortedRequests.length}
+                    {totalRequests === 0 ? '0' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, totalRequests)}`} of {totalRequests}
                   </span>
                   <div className="flex items-center gap-0.5">
-                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={clampedPage === 1}
+                    <button onClick={() => setPage(1)} disabled={page === 1}
+                      className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                      <ChevronLeft size={13} />
+                    </button>
+                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
                       className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                       <ChevronLeft size={13} />
                     </button>
                     <span className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-[11px] font-bold min-w-[60px] text-center">
-                      {clampedPage} / {totalPages}
+                      {page} / {totalPages}
                     </span>
-                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={clampedPage === totalPages}
+                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                      className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                      <ChevronRight size={13} />
+                    </button>
+                    <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
                       className="p-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                       <ChevronRight size={13} />
                     </button>

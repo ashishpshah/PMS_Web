@@ -6,12 +6,12 @@ namespace TaskManagement.Services
 {
     public interface IChatService
     {
-        Task<List<ChatMessageDto>> GetRecentMessagesAsync(int count = 50, int? beforeId = null, int? roomId = null);
+        Task<ApiResponse<List<ChatMessageDto>>> GetRecentMessagesAsync(int roomId, int page = 1, int pageSize = 25, int? beforeId = null);
         Task<ChatMessageDto> SaveMessageAsync(int senderId, SendMessageDto dto);
         Task<ChatAttachmentDto> SaveAttachmentAsync(int messageId, IFormFile file, IWebHostEnvironment env);
         Task<ChatAttachment?> GetAttachmentAsync(int attachmentId);
         Task<(bool valid, string error)> ValidateFileAsync(IFormFile file);
-        Task<List<ChatRoomDto>> GetRoomsForUserAsync(int userId);
+        Task<ApiResponse<List<ChatRoomDto>>> GetRoomsForUserAsync(int userId, int page = 1, int pageSize = 25);
         Task<ChatRoomDto> CreateRoomAsync(int createdById, CreateChatRoomDto dto);
         Task<ChatRoomDto?> GetOrCreateDirectRoomAsync(int userId, int otherUserId);
         Task<bool> IsMemberAsync(int roomId, int userId);
@@ -37,8 +37,11 @@ namespace TaskManagement.Services
             _db = db;
         }
 
-        public async Task<List<ChatMessageDto>> GetRecentMessagesAsync(int count = 50, int? beforeId = null, int? roomId = null)
+        public async Task<ApiResponse<List<ChatMessageDto>>> GetRecentMessagesAsync(int roomId, int page = 1, int pageSize = 25, int? beforeId = null)
         {
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
             var query = _db.ChatMessages
                 .Where(m => !m.IsDeleted && m.RoomId == roomId)
                 .Include(m => m.Sender)
@@ -52,23 +55,47 @@ namespace TaskManagement.Services
             if (beforeId.HasValue)
                 query = query.Where(m => m.Id < beforeId.Value);
 
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
             var messages = await query
                 .OrderByDescending(m => m.SentAt)
-                .Take(count)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return messages
+            var dtos = messages
                 .OrderBy(m => m.SentAt)
                 .Select(MapToDto)
                 .ToList();
+
+            return new ApiResponse<List<ChatMessageDto>>
+            {
+                Success = true,
+                Data = dtos,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
 
-        public async Task<List<ChatRoomDto>> GetRoomsForUserAsync(int userId)
+        public async Task<ApiResponse<List<ChatRoomDto>>> GetRoomsForUserAsync(int userId, int page = 1, int pageSize = 25)
         {
-            // P4-B: load only the most recent message per room instead of all messages
-            var rooms = await _db.ChatRooms
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            page = Math.Max(1, page);
+
+            var query = _db.ChatRooms
                 .Where(r => r.RoomType == "public" || r.Members.Any(m => m.UserId == userId))
                 .Include(r => r.Members).ThenInclude(m => m.User)
+                .OrderByDescending(r => r.CreatedAt);
+
+            var totalCount = await query.CountAsync();
+            var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling((double)totalCount / pageSize);
+
+            var rooms = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
             var roomIds = rooms.Select(r => r.Id).ToList();
@@ -86,7 +113,7 @@ namespace TaskManagement.Services
                 .Where(m => m.RoomId.HasValue)
                 .ToDictionary(m => m.RoomId!.Value, m => m);
 
-            return rooms.Select(r =>
+            var dtos = rooms.Select(r =>
             {
                 lastByRoom.TryGetValue(r.Id, out var last);
                 return new ChatRoomDto
@@ -106,7 +133,17 @@ namespace TaskManagement.Services
                     }).ToList(),
                     LastMessage = last != null ? MapToDto(last) : null
                 };
-            }).OrderByDescending(r => r.LastMessage?.SentAt ?? DateTime.MinValue).ToList();
+            }).ToList();
+
+            return new ApiResponse<List<ChatRoomDto>>
+            {
+                Success = true,
+                Data = dtos,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalPages
+            };
         }
 
         public async Task<ChatRoomDto> CreateRoomAsync(int createdById, CreateChatRoomDto dto)
