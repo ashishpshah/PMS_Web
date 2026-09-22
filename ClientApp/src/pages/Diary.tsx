@@ -567,7 +567,7 @@ export default function Diary() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
-                  {paged.map(entry => (
+                  {filtered.map(entry => (
                     <tr key={entry.id} className={cn('hover:bg-gray-50/50 dark:hover:bg-gray-900/50 transition-all group', editingEntry?.id === entry.id && 'bg-indigo-50/40 dark:bg-indigo-900/10')}>
                       <td className="px-4 py-2.5 text-[12px] font-bold text-gray-700 dark:text-gray-300 whitespace-nowrap">
                         {formatDate(entry.date.slice(0, 10))}

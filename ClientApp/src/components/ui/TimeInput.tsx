@@ -12,6 +12,7 @@ interface TimeInputProps {
   maxLength?: number;
   /** Caps the hour portion as it's typed (e.g. 24 rejects a 30-hour entry down to 24). Minute overflow past this (e.g. 24:01) is left for numeric validation downstream. */
   maxHours?: number;
+  disabled?: boolean;
 }
 
 // Apply HH:MM mask to raw digits (max 4 digits), clamping the hour portion to maxHours once both hour digits are entered
@@ -41,6 +42,7 @@ export function TimeInput({
   className,
   placeholder = '00:00',
   maxHours,
+  disabled,
 }: TimeInputProps) {
   const isControlled = value !== undefined;
   const [display, setDisplay] = useState(isControlled ? (value ?? '') : (defaultValue ?? ''));
@@ -94,6 +96,7 @@ export function TimeInput({
         placeholder={placeholder}
         maxLength={5}
         pattern="[0-9]{1,3}:[0-5][0-9]"
+        disabled={disabled}
         className={cn('w-full pr-8 font-mono', className)}
         autoComplete="off"
       />

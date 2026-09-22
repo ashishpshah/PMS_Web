@@ -103,18 +103,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const [projectsData, usersData, assignableData, activitiesData, statusTransitionsData] = await Promise.all([
-        projectService.getAll().catch(() => []),
-        userService.getAll().catch(() => []),
-        userService.getAssignable().catch(() => []),
+      const [projectsRes, usersRes, assignableRes, activitiesData, statusTransitionsData] = await Promise.all([
+        projectService.getAll().catch(() => ({ data: [] })),
+        userService.getAll().catch(() => ({ data: [] })),
+        userService.getAssignable().catch(() => ({ data: [] })),
         activityService.getAll().catch(() => []),
         taskService.getStatusTransitions().catch(() => ({})),
       ]);
 
-      setProjects(projectsData || []);
+      setProjects(projectsRes.data || []);
       setTasks([]);
-      setUsers(usersData || []);
-      setAssignableUsers(assignableData || []);
+      setUsers(usersRes.data || []);
+      setAssignableUsers(assignableRes.data || []);
       setActivities(activitiesData || []);
       setStatusTransitions(statusTransitionsData || {});
     } catch (err) {

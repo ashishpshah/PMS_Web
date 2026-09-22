@@ -29,7 +29,8 @@ export default function CalendarPage() {
         leaveService.getMyRequests(),
       ]);
       setHolidays(h);
-      setMyLeave(mine.filter(r => r.status !== 'Rejected'));
+      const leaveList = Array.isArray(mine) ? mine : (Array.isArray(mine?.data) ? mine.data : []);
+      setMyLeave(leaveList.filter(r => r.status !== 'Rejected'));
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to load calendar data');
     } finally {

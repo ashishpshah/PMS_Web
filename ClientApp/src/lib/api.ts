@@ -141,8 +141,8 @@ export interface PagedResult<T> {
 }
 
 /** Like apiRequest but also returns pagination metadata from the ApiResponse envelope. */
-export async function apiRequestWithMeta<T>(endpoint: string, options: RequestInit = {}): Promise<PagedResult<T>> {
-  const json = await fetchJson(endpoint, options) as Record<string, unknown>;
+export async function apiRequestWithMeta<T>(endpoint: string, options: RequestInit = {}, opts?: ApiRequestOpts): Promise<PagedResult<T>> {
+  const json = await fetchJson(endpoint, options, false, opts?.silent ?? false) as Record<string, unknown>;
   const data = (json && typeof json === 'object' && 'success' in json && 'data' in json)
     ? (json.data as T)
     : (json as T);

@@ -71,11 +71,13 @@ interface ReportsPeriodFilterProps {
   setCustomTo: (v: string) => void;
 }
 function ReportsPeriodFilter({ period, setPeriod, customFrom, setCustomFrom, customTo, setCustomTo }: ReportsPeriodFilterProps) {
+  const periodOptions = PERIOD_OPTIONS.map((o): SelectOption => ({ value: o.key, label: o.label }));
+  const selectedOption = periodOptions.find(o => o.value === period) ?? null;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <VSelect
-        options={PERIOD_OPTIONS.map((o): SelectOption => ({ value: o.key, label: o.label }))}
-        value={{ value: period, label: PERIOD_OPTIONS.find(o => o.key === period)?.label ?? period }}
+        options={periodOptions}
+        value={selectedOption}
         onChange={(opt) => { if (opt) setPeriod(opt.value as PeriodKey); }}
         isSearchable={false}
         className="w-36"
@@ -471,7 +473,13 @@ export default function Dashboard() {
       reportsFilterUserId !== 'all' ? reportsFilterUserId : undefined,
       filterProjectId !== 'all' ? filterProjectId : undefined,
     )
-      .then(r => { if (!cancelled) setSummary(r); })
+      .then(r => { 
+        if (!cancelled && r && typeof r === 'object' && Array.isArray(r.byUser) && Array.isArray(r.byProject) && Array.isArray(r.byTask)) {
+          setSummary(r); 
+        } else if (!cancelled) {
+          setSummary(null);
+        }
+      })
       .catch(() => { if (!cancelled) setSummary(null); })
       .finally(() => { if (!cancelled) setSummaryLoading(false); });
     return () => { cancelled = true; };
@@ -513,7 +521,7 @@ export default function Dashboard() {
     if (!rangeReady) return;
     let cancelled = false;
     dashboardService.getStats(scopedUserId ?? undefined, range.from, range.to)
-      .then(s => { if (!cancelled) setDashboardStats(s); })
+      .then(s => { if (!cancelled && s && typeof s === 'object') setDashboardStats(s); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [scopedUserId, range.from, range.to, rangeReady]);
@@ -523,7 +531,7 @@ export default function Dashboard() {
     let cancelled = false;
     setEffortLoading(true);
     dashboardService.getEffortStats(range.from, range.to, scopedUserId ?? undefined)
-      .then(s => { if (!cancelled) setEffortStats(s); })
+      .then(s => { if (!cancelled && s && typeof s === 'object') setEffortStats(s); else if (!cancelled) setEffortStats(null); })
       .catch(() => { if (!cancelled) setEffortStats(null); })
       .finally(() => { if (!cancelled) setEffortLoading(false); });
     return () => { cancelled = true; };
@@ -536,7 +544,7 @@ export default function Dashboard() {
     let cancelled = false;
     setAtRiskLoading(true);
     dashboardService.getAtRisk(scopedUserId ?? undefined)
-      .then(d => { if (!cancelled) setAtRisk(d); })
+      .then(d => { if (!cancelled && d && typeof d === 'object' && Array.isArray(d.overdueTasks) && Array.isArray(d.stalledProjects)) setAtRisk(d); else if (!cancelled) setAtRisk(null); })
       .catch(() => { if (!cancelled) setAtRisk(null); })
       .finally(() => { if (!cancelled) setAtRiskLoading(false); });
     return () => { cancelled = true; };
@@ -556,8 +564,8 @@ export default function Dashboard() {
     ])
       .then(([assigned, created]) => {
         if (cancelled) return;
-        setMyAssignedTasks(assigned.tasks);
-        setMyCreatedTasks(created.tasks);
+        setMyAssignedTasks(assigned?.tasks ?? (Array.isArray(assigned) ? assigned : []));
+        setMyCreatedTasks(created?.tasks ?? (Array.isArray(created) ? created : []));
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -578,8 +586,8 @@ export default function Dashboard() {
     ])
       .then(([recent, blocked]) => {
         if (cancelled) return;
-        setScopedRecentTasks(recent.tasks);
-        setScopedBlockedTasks(blocked.tasks);
+        setScopedRecentTasks(recent?.tasks ?? (Array.isArray(recent) ? recent : []));
+        setScopedBlockedTasks(blocked?.tasks ?? (Array.isArray(blocked) ? blocked : []));
       })
       .catch(() => { if (!cancelled) { setScopedRecentTasks([]); setScopedBlockedTasks([]); } })
       .finally(() => { if (!cancelled) setScopedTasksLoading(false); });
@@ -608,10 +616,16 @@ export default function Dashboard() {
     let cancelled = false;
     setDiaryLoading(true);
     (isAdmin
-      ? diaryService.getAllDiary({ from: day, to: day }, /* silent */ true)
-      : diaryService.getMyDiary({ from: day, to: day }, /* silent */ true)
+      ? diaryService.getAllDiary({ from: day, to: day, pageSize: 500 }, /* silent */ true)
+      : diaryService.getMyDiary({ from: day, to: day, pageSize: 500 }, /* silent */ true)
     )
-      .then(e => { if (!cancelled) setDiaryEntries(e); })
+      .then(e => {
+        if (!cancelled) {
+          const raw = e as unknown as { data?: WorkDiaryEntry[] } | WorkDiaryEntry[];
+          const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+          setDiaryEntries(list);
+        }
+      })
       .catch(() => { if (!cancelled) setDiaryEntries([]); })
       .finally(() => { if (!cancelled) setDiaryLoading(false); });
     return () => { cancelled = true; };
@@ -638,9 +652,9 @@ export default function Dashboard() {
   const activeTaskCount = dashboardStats ? dashboardStats.totalTasks - dashboardStats.completedTasks : 0;
 
   const stats = [
-    { id: 1, label: 'Total Projects', value: String(dashboardStats?.totalProjects ?? projects.length), icon: Folder, color: 'indigo', href: '/projects' },
+    { id: 1, label: 'Total Projects', value: String(dashboardStats?.totalProjects ?? (Array.isArray(projects) ? projects.length : 0)), icon: Folder, color: 'indigo', href: '/projects' },
     { id: 2, label: 'Active Tasks', value: String(activeTaskCount), icon: CheckCircle2, color: 'emerald', href: '/tasks' },
-    { id: 3, label: 'Team Members', value: String(users.length), icon: Users, color: 'blue', href: '/users' },
+    { id: 3, label: 'Team Members', value: String(Array.isArray(users) ? users.length : 0), icon: Users, color: 'blue', href: '/users' },
     { id: 4, label: 'Blocked Tasks', value: String(blockedCount), icon: ShieldAlert, color: blockedCount > 0 ? 'red' : 'teal', href: '/tasks' },
   ];
 
@@ -744,7 +758,7 @@ export default function Dashboard() {
             Reports content, mirrored from /reports (same-to-same). Own filters,
             independent of the shared DashboardFilterBar below.
             ════════════════════════════════════════════════════════════════════ */}
-        {isAdmin ? (
+        {isAdmin && Array.isArray(projects) && Array.isArray(users) ? (
           <div className="space-y-6">
             {/* ── Working Hours Summary ── */}
             <Card>
@@ -808,14 +822,16 @@ export default function Dashboard() {
 
                 {/* Tab content */}
                 {(() => {
-                  const pagedByUser = paginate(summary?.byUser ?? [], whUserPage);
-                  const pagedByProject = paginate(summary?.byProject ?? [], whProjectPage);
+                  const byUser = Array.isArray(summary?.byUser) ? summary.byUser : [];
+                  const byProject = Array.isArray(summary?.byProject) ? summary.byProject : [];
+                  const pagedByUser = paginate(byUser, whUserPage);
+                  const pagedByProject = paginate(byProject, whProjectPage);
                   return (
                     <>
                 <div className="overflow-x-auto -mx-5">
                   {summaryLoading ? (
                     <div className="p-5"><ReportsRowSkeleton /></div>
-                  ) : !summary || (summaryTab === 'user' && summary.byUser.length === 0) || (summaryTab === 'project' && summary.byProject.length === 0) ? (
+                  ) : !summary || (summaryTab === 'user' && byUser.length === 0) || (summaryTab === 'project' && byProject.length === 0) ? (
                     <div className="p-8 text-center text-[12px] text-gray-400 italic">No data for the selected filters and period.</div>
                   ) : summaryTab === 'user' ? (
                     <table className="w-full text-sm">
@@ -1136,10 +1152,12 @@ export default function Dashboard() {
             </div>
           ) : null;
 
+          const safeDiaryEntries = Array.isArray(diaryEntries) ? diaryEntries : [];
+
           if (isAdmin) {
             // Group diary entries by userId, sum hours
             const byUser: Record<number, number> = {};
-            for (const e of diaryEntries) {
+            for (const e of safeDiaryEntries) {
               byUser[e.userId] = (byUser[e.userId] ?? 0) + (e.hoursSpent ?? 0);
             }
             const rows = assignableUsers.map(u => ({
@@ -1220,7 +1238,7 @@ export default function Dashboard() {
           }
 
           // Regular user view
-          const totalHours = diaryEntries.reduce((s, e) => s + (e.hoursSpent ?? 0), 0);
+          const totalHours = safeDiaryEntries.reduce((s, e) => s + (e.hoursSpent ?? 0), 0);
           const pct  = Math.min(100, Math.round((totalHours / DIARY_GOAL) * 100));
           const done = totalHours >= DIARY_GOAL;
           const barColor  = done ? 'bg-emerald-500' : totalHours > 0 ? 'bg-amber-400' : 'bg-gray-200 dark:bg-gray-700';
@@ -1252,9 +1270,9 @@ export default function Dashboard() {
                         </span>
                       </div>
                       {/* Entry list */}
-                      {diaryEntries.length > 0 ? (
+                      {safeDiaryEntries.length > 0 ? (
                         <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                          {diaryEntries.map(e => (
+                          {safeDiaryEntries.map(e => (
                             <div key={e.id} className="flex items-center justify-between gap-2 py-1 border-b border-gray-50 dark:border-gray-900 last:border-0">
                               <div className="flex items-center gap-2 min-w-0">
                                 {e.category && (

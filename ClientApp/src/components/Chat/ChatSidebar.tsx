@@ -14,10 +14,11 @@ interface Props {
   onSelectRoom: (roomId: number | null) => void;
   onOpenDM: (userId: number) => void;
   onCreateRoom: (name: string, type: 'public' | 'private', memberIds: number[]) => void;
-  roomPage: number;
-  totalRooms: number;
-  totalRoomPages: number;
-  loadRoomPage: (page: number) => void;
+  roomPage?: number;
+  totalRooms?: number;
+  totalRoomPages?: number;
+  loadRoomPage?: (page: number) => void;
+  roomPageSize?: number;
 }
 
 type Tab = 'channels' | 'direct';
@@ -109,7 +110,22 @@ function NewRoomModal({ allUsers, currentUserId, onClose, onCreate }: {
   );
 }
 
-export function ChatSidebar({ allUsers, onlineUsers, rooms, activeRoomId, currentUserId, isConnected, onSelectRoom, onOpenDM, onCreateRoom }: Props) {
+export function ChatSidebar({
+  allUsers,
+  onlineUsers,
+  rooms,
+  activeRoomId,
+  currentUserId,
+  isConnected,
+  onSelectRoom,
+  onOpenDM,
+  onCreateRoom,
+  roomPage = 1,
+  totalRooms = 0,
+  totalRoomPages = 1,
+  loadRoomPage = () => {},
+  roomPageSize = 25,
+}: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [tab, setTab] = useState<Tab>('channels');
   const [showNewRoom, setShowNewRoom] = useState(false);
@@ -249,14 +265,14 @@ export function ChatSidebar({ allUsers, onlineUsers, rooms, activeRoomId, curren
                           className="p-0.5 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="First">
                           <ChevronLeft size={10} />
                         </button>
-                        <button onClick={() => loadRoomPage(p => Math.max(1, p - 1))} disabled={roomPage === 1}
+                        <button onClick={() => loadRoomPage(Math.max(1, roomPage - 1))} disabled={roomPage === 1}
                           className="p-0.5 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Prev">
                           <ChevronLeft size={11} />
                         </button>
                         <span className="px-1.5 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-[9px] font-bold min-w-[40px] text-center">
                           {roomPage} / {totalRoomPages}
                         </span>
-                        <button onClick={() => loadRoomPage(p => Math.min(totalRoomPages, p + 1))} disabled={roomPage === totalRoomPages}
+                        <button onClick={() => loadRoomPage(Math.min(totalRoomPages, roomPage + 1))} disabled={roomPage === totalRoomPages}
                           className="p-0.5 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Next">
                           <ChevronRight size={11} />
                         </button>

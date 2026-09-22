@@ -85,10 +85,11 @@ export default function Roles() {
 const loadRoles = async () => {
       setIsSaving(true);
       try {
-        const data = await roleService.getAll();
-        setRoles(data);
-        if (data.length > 0 && !selectedRoleId) {
-          setSelectedRoleId(data[0].id);
+        const res = await roleService.getAll(1, 100);
+        const rolesList = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+        setRoles(rolesList);
+        if (rolesList.length > 0 && !selectedRoleId) {
+          setSelectedRoleId(rolesList[0].id);
         }
       } catch (err) {
         showError(err instanceof Error ? err.message : 'Failed to load roles');

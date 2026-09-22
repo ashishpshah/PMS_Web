@@ -26,14 +26,11 @@ export default defineConfig({
     },
   },
 
-  globalSetup: path.resolve(__dirname, 'global-setup.ts'),
-
   projects: [
     {
       name: 'chromium',
       use: {
         browserName: 'chromium',
-        storageState: 'e2e/.auth/user.json',
         viewport: { width: 1280, height: 900 },
         baseURL: 'http://localhost:5178',
       },

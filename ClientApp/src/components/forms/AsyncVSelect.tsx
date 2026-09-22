@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import AsyncSelect, { GroupBase, StylesConfig, ThemeConfig } from 'react-select/async';
+import AsyncSelect from 'react-select/async';
+import { components, GroupBase, StylesConfig, ThemeConfig } from 'react-select';
 import { useTheme } from '../../context/ThemeContext';
 
 export interface SelectOption {
@@ -200,7 +201,7 @@ export function AsyncVSelect(props: AsyncVSelectProps) {
         defaultOptions={defaultOptions}
         loadOptions={loadOptionsDebounced}
         getOptionLabel={(opt) => opt.label}
-        getOptionValue={(opt) => opt.value}
+        getOptionValue={(opt) => String(opt.value)}
         value={value}
         onChange={onChange}
         onInputChange={setInputValue}
@@ -227,4 +228,4 @@ export function AsyncVSelect(props: AsyncVSelectProps) {
 }
 
 // Re-export the original VSelect for backward compatibility
-export { VSelectProps, VSelectPropsSingle, VSelectPropsMulti } from './VSelect';
+export type { VSelectProps } from './VSelect';

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Search, Mail, Trash2, Edit2, LayoutGrid, List, Upload, Camera, Phone, Copy, Check, X, UserCheck, UserX, RotateCcw, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
+import { Users as UsersIcon, Plus, Search, Mail, Trash2, Edit2, LayoutGrid, List, Upload, Camera, Phone, Copy, Check, X, UserCheck, UserX, RotateCcw, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
 import { roleService } from '../services/role.service';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -45,7 +45,7 @@ function StatusBadge({ user }: { user: User }) {
 }
 
 export default function Users() {
-  const { tasks, projects } = useData();
+  const { tasks, projects, addUser, updateUser, deleteUser, setUserActive, reactivateUser, addActivity } = useData();
   const { isSystemAdmin } = useAuth();
   const { canCreate: _canCreate, canUpdate: _canUpdate, canDelete: _canDelete } = usePermissions();
   const canCreateUser  = _canCreate('/users');
@@ -84,7 +84,7 @@ export default function Users() {
   const { errors: serverErrors, setFromApiError, clearErrors: clearServerErrors } = useValidationErrors();
 
   useEffect(() => {
-    roleService.getAll().then(setRoles).catch(() => {});
+    roleService.getAll(1, 100).then(res => setRoles(Array.isArray(res) ? res : (res?.data ?? []))).catch(() => {});
   }, []);
 
   // Fetch users with server-side pagination
@@ -209,6 +209,7 @@ export default function Users() {
       }
       setIsModalOpen(false);
       setEditingUser(null);
+      await fetchUsers();
     } catch (err) {
       setFromApiError(err);
       showError(err instanceof Error ? err.message : 'Failed to save member');
@@ -222,6 +223,7 @@ export default function Users() {
         try {
           await deleteUser(user.id);
           showSuccess(`${user.name} has been deleted.`);
+          await fetchUsers();
         } catch (err) {
           showError(err instanceof Error ? err.message : 'Failed to delete user.');
         }
@@ -238,6 +240,7 @@ export default function Users() {
         try {
           await setUserActive(user.id, isActive);
           showSuccess(isActive ? `${user.name} has been activated.` : `${user.name} has been deactivated.`);
+          await fetchUsers();
         } catch (err) {
           showError(err instanceof Error ? err.message : 'Failed to update user status.');
         }
@@ -252,6 +255,7 @@ export default function Users() {
         try {
           await reactivateUser(user.id);
           showSuccess(`${user.name} has been reactivated.`);
+          await fetchUsers();
         } catch (err) {
           showError(err instanceof Error ? err.message : 'Failed to reactivate user.');
         }

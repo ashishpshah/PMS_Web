@@ -110,6 +110,10 @@ export default function Chat() {
         onSelectRoom={handleSelectRoom}
         onOpenDM={handleOpenDM}
         onCreateRoom={handleCreateRoom}
+        roomPage={roomPage}
+        totalRooms={totalRooms}
+        totalRoomPages={totalRoomPages}
+        loadRoomPage={loadRoomPage}
       />
 
       <div className="flex flex-col flex-1 min-w-0 bg-gray-50 dark:bg-[#0d0d12]">

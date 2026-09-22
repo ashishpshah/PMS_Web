@@ -112,13 +112,15 @@ function buildQs(fromIso?: string, toIso?: string): string {
   return s ? `?${s}` : '';
 }
 
+const toArray = <T,>(v: unknown): T[] => Array.isArray(v) ? (v as T[]) : [];
+
 export const reportService = {
   async getUserEffortReport(fromIso?: string, toIso?: string): Promise<UserEffortReport> {
     const dto = await apiRequest<ApiUserEffortReportDto>(`/reports/user-effort${buildQs(fromIso, toIso)}`);
     return {
       fromUtc: dto.fromUtc,
       toUtc: dto.toUtc,
-      users: (dto.users || []).map(mapEffortItem),
+      users: toArray<ApiUserEffortReportItemDto>(dto.users).map(mapEffortItem),
     };
   },
 
@@ -127,7 +129,7 @@ export const reportService = {
     return {
       fromUtc: dto.fromUtc,
       toUtc: dto.toUtc,
-      users: (dto.users || []).map(mapTransitionItem),
+      users: toArray<ApiUserTransitionReportItemDto>(dto.users).map(mapTransitionItem),
     };
   },
 
@@ -142,7 +144,7 @@ export const reportService = {
       avatarUrl: dto.avatarUrl,
       fromUtc: dto.fromUtc,
       toUtc: dto.toUtc,
-      days: (dto.days || []).map(d => ({
+      days: toArray<DailyEffortItem>(dto.days).map(d => ({
         date: d.date,
         productiveSeconds: d.productiveSeconds,
         pausedSeconds: d.pausedSeconds,
@@ -175,9 +177,9 @@ export const reportService = {
       totalWorkingSeconds: dto.totalWorkingSeconds,
       filterUserId: dto.filterUserId,
       filterProjectId: dto.filterProjectId,
-      byUser: (dto.byUser || []).map(u => ({ ...u }) as HoursSummaryUserRow),
-      byTask: (dto.byTask || []).map(t => ({ ...t, taskStatus: t.taskStatus as Status }) as HoursSummaryTaskRow),
-      byProject: (dto.byProject || []).map(p => ({ ...p }) as HoursSummaryProjectRow),
+      byUser: toArray<HoursSummaryUserRow>(dto.byUser).map(u => ({ ...u })),
+      byTask: toArray<HoursSummaryTaskRow>(dto.byTask).map(t => ({ ...t, taskStatus: t.taskStatus as Status })),
+      byProject: toArray<HoursSummaryProjectRow>(dto.byProject).map(p => ({ ...p })),
     };
   },
 
@@ -192,7 +194,7 @@ export const reportService = {
       avatarUrl: dto.avatarUrl,
       fromUtc: dto.fromUtc,
       toUtc: dto.toUtc,
-      tasks: (dto.tasks || []).map(mapTaskEffortItem),
+      tasks: toArray(dto.tasks).map(mapTaskEffortItem),
     };
   },
 
