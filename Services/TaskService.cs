@@ -15,7 +15,7 @@ namespace TaskManagement.Services
 {
     public interface ITaskService
     {
-        Task<ApiResponse<List<TaskDto>>> GetAllTasksAsync(string? status, string? priority, int? projectId, int? assigneeId = null, string? search = null, int? createdById = null, int page = 1, int pageSize = 100, CancellationToken ct = default);
+        Task<ApiResponse<List<TaskDto>>> GetAllTasksAsync(string? status, string? priority, int? projectId, int? assigneeId = null, string? search = null, int? createdById = null, DateTime? fromDate = null, DateTime? toDate = null, string? completionFilter = null, int page = 1, int pageSize = 100, CancellationToken ct = default);
         Task<ApiResponse<TaskDto>> GetTaskByIdAsync(int id, CancellationToken ct = default);
         Task<ApiResponse<TaskDto>> CreateTaskAsync(CreateTaskDto createTaskDto, int creatorId);
         Task<ApiResponse<TaskDto>> UpdateTaskAsync(int id, CreateTaskDto updateTaskDto, int userId);
@@ -109,7 +109,7 @@ namespace TaskManagement.Services
             _transitions = transitions;
         }
 
-        public async Task<ApiResponse<List<TaskDto>>> GetAllTasksAsync(string? status, string? priority, int? projectId, int? assigneeId = null, string? search = null, int? createdById = null, int page = 1, int pageSize = 100, CancellationToken ct = default)
+        public async Task<ApiResponse<List<TaskDto>>> GetAllTasksAsync(string? status, string? priority, int? projectId, int? assigneeId = null, string? search = null, int? createdById = null, DateTime? fromDate = null, DateTime? toDate = null, string? completionFilter = null, int page = 1, int pageSize = 100, CancellationToken ct = default)
         {
             // Lightweight base query for filter predicates — no includes, used for COUNT
             var baseQuery = _context.Tasks.AsQueryable();
@@ -128,6 +128,35 @@ namespace TaskManagement.Services
             {
                 var term = search.Trim().ToLower();
                 baseQuery = baseQuery.Where(t => t.Title.ToLower().Contains(term) || (t.Code != null && t.Code.ToLower().Contains(term)));
+            }
+
+            // Date range filter (CreatedAt by default)
+            if (fromDate.HasValue)
+                baseQuery = baseQuery.Where(t => t.CreatedAt >= fromDate.Value);
+            if (toDate.HasValue)
+                baseQuery = baseQuery.Where(t => t.CreatedAt <= toDate.Value);
+
+            // Completion filter
+            if (!string.IsNullOrWhiteSpace(completionFilter))
+            {
+                switch (completionFilter.ToLower())
+                {
+                    case "completed-on-time": // Completed on time (actual <= estimated)
+                        baseQuery = baseQuery.Where(t => t.Status == "completed" && t.ActualHours != null && t.EstimatedHours != null && t.ActualHours <= t.EstimatedHours);
+                        break;
+                    case "completed-late": // Completed late (actual > estimated)
+                        baseQuery = baseQuery.Where(t => t.Status == "completed" && t.ActualHours != null && t.EstimatedHours != null && t.ActualHours > t.EstimatedHours);
+                        break;
+                    case "not-completed-overdue": // Not completed and estimated hours exceeded (overdue)
+                        baseQuery = baseQuery.Where(t => t.Status != "completed" && t.EstimatedHours != null && t.EstimatedHours > 0);
+                        break;
+                    case "completed": // All completed tasks
+                        baseQuery = baseQuery.Where(t => t.Status == "completed");
+                        break;
+                    case "not-completed": // All not completed tasks
+                        baseQuery = baseQuery.Where(t => t.Status != "completed");
+                        break;
+                }
             }
 
             pageSize = Math.Clamp(pageSize, 1, 500);

@@ -16,7 +16,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: 'http://localhost:3001',
+    baseURL: 'http://localhost:5178',
     trace: 'on-first-retry',
     ignoreHTTPSErrors: true,
     launchOptions: {
@@ -35,6 +35,7 @@ export default defineConfig({
         browserName: 'chromium',
         storageState: 'e2e/.auth/user.json',
         viewport: { width: 1280, height: 900 },
+        baseURL: 'http://localhost:5178',
       },
       testMatch: '**/*.spec.ts',
     },

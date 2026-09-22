@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDateTime, formatSeconds, toHHMM } from '../lib/utils';
 import { Card, CardContent } from '../components/ui/Card';
@@ -501,6 +501,14 @@ export default function Dashboard() {
 
   // ── Dashboard stats (all 7 statuses + Section 10 metrics), role + date scoped ─
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+
+  // ── Safe computed stats — never throw if dashboardStats is null ────────────
+  const safeDashboardStats = useMemo(() => ({
+    totalProjects: dashboardStats?.totalProjects ?? 0,
+    totalTasks: dashboardStats?.totalTasks ?? 0,
+    completedTasks: dashboardStats?.completedTasks ?? 0,
+    tasksByStatus: dashboardStats?.tasksByStatus ?? [],
+  }), [dashboardStats]);
   useEffect(() => {
     if (!rangeReady) return;
     let cancelled = false;

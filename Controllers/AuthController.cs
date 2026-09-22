@@ -93,7 +93,7 @@ namespace TaskManagement.Controllers
                 Secure   = Request.IsHttps,
                 SameSite = SameSiteMode.Strict,
                 MaxAge   = TimeSpan.FromDays(days),
-                Path     = "/api/auth",
+                Path     = "/",
             });
         }
 

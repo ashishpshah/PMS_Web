@@ -466,6 +466,22 @@ export default function Tasks() {
   const [showHasIssues, setShowHasIssues]       = useState(false);
   const [showCreatedByMe, setShowCreatedByMe]   = useState(false);
 
+  // ── new date range & completion filters ───────────────────────────────────────
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [completionFilter, setCompletionFilter] = useState('');
+  const [completionDropdownOpen, setCompletionDropdownOpen] = useState(false);
+  const [completionDropdownPos, setCompletionDropdownPos] = useState<{ top: number; left: number } | null>(null);
+
+  const completionFilterOptions = [
+    { value: '', label: 'All' },
+    { value: 'completed-on-time', label: 'Completed on time (actual ≤ estimated)' },
+    { value: 'completed-late', label: 'Completed late (actual > estimated)' },
+    { value: 'not-completed-overdue', label: 'Not completed & estimated hours exceeded' },
+    { value: 'completed', label: 'Completed (all)' },
+    { value: 'not-completed', label: 'Not Completed (all)' },
+  ] as const;
+
   // ── local pagination ──────────────────────────────────────────────────────
   const [localPage, setLocalPage]       = useState(1);
   const [localPageSize, setLocalPageSize] = useState(25);
@@ -563,6 +579,9 @@ export default function Tasks() {
     if (selectedProjectId !== null) filters.projectId = selectedProjectId;
     if (selectedUserIds.length === 1) filters.assigneeId = selectedUserIds[0];
     if (debouncedSearch.trim()) filters.search = debouncedSearch.trim();
+    if (fromDate) filters.fromDate = fromDate;
+    if (toDate) filters.toDate = toDate;
+    if (completionFilter) filters.completionFilter = completionFilter;
     taskService.getAll(filters, tasksPage, TASKS_PAGE_SIZE)
       .then(result => {
         if (!cancelled) {
@@ -574,13 +593,13 @@ export default function Tasks() {
       .finally(() => { if (!cancelled) setTasksLoading(false); });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProjectId, selectedUserIds, debouncedSearch, tasksPage, refreshKey]);
+  }, [selectedProjectId, selectedUserIds, debouncedSearch, fromDate, toDate, completionFilter, tasksPage, refreshKey]);
 
   // Reset server page 1 when server-side filters change.
   useEffect(() => {
     setTasksPage(1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProjectId, selectedUserIds, debouncedSearch]);
+  }, [selectedProjectId, selectedUserIds, debouncedSearch, fromDate, toDate, completionFilter]);
 
   // Reset local page when client-side filters or data change.
   useEffect(() => {
@@ -650,6 +669,9 @@ export default function Tasks() {
     setShowBlockedOnly(false);
     setShowHasIssues(false);
     setShowCreatedByMe(false);
+    setFromDate('');
+    setToDate('');
+    setCompletionFilter('');
     setProjectDropdownOpen(false);
     setUserDropdownOpen(false);
     setOwnerDropdownOpen(false);
@@ -657,7 +679,7 @@ export default function Tasks() {
     setLocalPage(1);
   };
 
-  const hasActiveFilters = !!(searchQuery || selectedProjectId !== null || selectedUserIds.length > 0 || selectedOwnerIds.length > 0 || showBlockedOnly || showHasIssues || showCreatedByMe);
+  const hasActiveFilters = !!(searchQuery || selectedProjectId !== null || selectedUserIds.length > 0 || selectedOwnerIds.length > 0 || showBlockedOnly || showHasIssues || showCreatedByMe || fromDate || toDate || completionFilter);
 
   const selectedProjectLabel = selectedProjectId === null
     ? 'All Projects'
@@ -1230,6 +1252,53 @@ export default function Tasks() {
                 <AlertTriangle size={13} />
                 <span>Has Issues</span>
               </button>
+
+              {/* Date Range Filter */}
+              <div className="relative flex items-center gap-1.5">
+                <Calendar size={13} className="text-gray-400" />
+                <input type="date"
+                  value={fromDate}
+                  onChange={e => { setFromDate(e.target.value); setLocalPage(1); }}
+                  className="px-2.5 py-1.5 text-[12px] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 w-32"
+                  title="From Date"
+                />
+                <span className="text-[11px] text-gray-400 font-bold">to</span>
+                <input type="date"
+                  value={toDate}
+                  onChange={e => { setToDate(e.target.value); setLocalPage(1); }}
+                  className="px-2.5 py-1.5 text-[12px] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 w-32"
+                  title="To Date"
+                />
+              </div>
+
+              {/* Completion Filter */}
+              <div className="relative">
+                <button type="button"
+                  onClick={() => setCompletionDropdownOpen(o => !o)}
+                  className={cn("flex items-center gap-1.5 py-1.5 pl-3 pr-2.5 rounded-md text-[12px] font-medium border transition-all select-none",
+                    completionFilter ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700/50 text-indigo-700 dark:text-indigo-300" : "bg-gray-50 dark:bg-gray-900 border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100"
+                  )}>
+                  <Clock size={13} />
+                  <span>{completionFilter ? completionFilterOptions.find(o => o.value === completionFilter)?.label : 'Completion'}</span>
+                  <ChevronDownIcon size={12} className={cn("transition-transform", completionDropdownOpen && "rotate-180")} />
+                </button>
+                {completionDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setCompletionDropdownOpen(false)} />
+                    <div className="fixed z-50 w-56 bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-100 dark:border-gray-800" style={{ top: completionDropdownPos?.top, left: completionDropdownPos?.left }}>
+                      <div className="p-1 max-h-72 overflow-y-auto custom-scrollbar">
+                        {completionFilterOptions.map(opt => (
+                          <button key={opt.value} onClick={() => { setCompletionFilter(opt.value === completionFilter ? '' : opt.value); setCompletionDropdownOpen(false); setLocalPage(1); }}
+                            className={cn("w-full flex items-center justify-between px-3 py-2 rounded-lg text-[12px] font-medium transition-colors", completionFilter === opt.value ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300" : "hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300")}>
+                            <span className="text-left truncate">{opt.label}</span>
+                            {completionFilter === opt.value && <Check size={12} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Clear */}
               {hasActiveFilters && (

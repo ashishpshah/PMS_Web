@@ -212,6 +212,9 @@ export interface TaskFilters {
   assigneeId?: number;
   createdById?: number;
   search?: string;
+  fromDate?: string;
+  toDate?: string;
+  completionFilter?: string;
 }
 
 export interface PagedTasks {
@@ -404,6 +407,9 @@ export const taskService = {
     if (filters?.assigneeId) params.set('assigneeId', String(filters.assigneeId));
     if (filters?.createdById) params.set('createdById', String(filters.createdById));
     if (filters?.search)    params.set('search',    filters.search);
+    if (filters?.fromDate) params.set('fromDate', filters.fromDate);
+    if (filters?.toDate) params.set('toDate', filters.toDate);
+    if (filters?.completionFilter) params.set('completionFilter', filters.completionFilter);
     const { data, meta } = await apiRequestWithMeta<ApiTaskDto[]>(`/tasks?${params}`);
     return {
       tasks:      (data || []).map(mapApiTask),

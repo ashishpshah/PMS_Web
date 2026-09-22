@@ -1061,7 +1061,6 @@ namespace TaskManagement.DTOs
         public string  Priority           { get; set; } = "medium";
         public int?    DefaultAssigneeId  { get; set; }
         public int?    QaReviewerId       { get; set; }
-        public int     DueDateOffsetDays  { get; set; }
         public List<string> Tags              { get; set; } = new();
         public List<string> ChecklistItems    { get; set; } = new();
         public List<int>    DependsOnPositions { get; set; } = new();

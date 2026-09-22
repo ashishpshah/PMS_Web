@@ -37,11 +37,13 @@ namespace TaskManagement.Controllers
             [FromQuery] string? status, [FromQuery] string? priority,
             [FromQuery] int? projectId, [FromQuery] int? assigneeId,
             [FromQuery] string? search, [FromQuery] int? createdById,
+            [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate,
+            [FromQuery] string? completionFilter,
             [FromQuery] int page = 1, [FromQuery] int pageSize = 100)
         {
             if (!await _authService.CanViewAsync("/tasks"))
                 return StatusCode(403, new ApiResponse<string> { Success = false, Message = "You do not have permission to view tasks" });
-            var result = await _taskService.GetAllTasksAsync(status, priority, projectId, assigneeId, search, createdById, page, pageSize, HttpContext.RequestAborted);
+            var result = await _taskService.GetAllTasksAsync(status, priority, projectId, assigneeId, search, createdById, fromDate, toDate, completionFilter, page, pageSize, HttpContext.RequestAborted);
             return Ok(result);
         }
 
