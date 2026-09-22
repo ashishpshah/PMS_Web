@@ -91,14 +91,14 @@ namespace TaskManagement.Controllers
             {
                 HttpOnly = true,
                 Secure   = Request.IsHttps,
-                SameSite = SameSiteMode.Strict,
+                SameSite = SameSiteMode.Lax,
                 MaxAge   = TimeSpan.FromDays(days),
                 Path     = "/",
             });
         }
 
         private void ClearRefreshCookie() =>
-            Response.Cookies.Delete("pms_rt", new CookieOptions { Path = "/api/auth" });
+            Response.Cookies.Delete("pms_rt", new CookieOptions { Path = "/", SameSite = SameSiteMode.Lax });
 
         // The refresh token is delivered to the browser solely via the httpOnly pms_rt cookie
         // (set just before this runs) — it must never also appear in the JSON response body,

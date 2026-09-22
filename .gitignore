@@ -39,7 +39,8 @@ publish/
 *.userosscache
 *.sln.docuser
 .vs/
-wwwroot/assets/
-appsettings.Production.json
+wwwroot/*
 
+ClientApp/e2e/*
+ClientApp/playwright-report/*
 ClientApp/test-results/*

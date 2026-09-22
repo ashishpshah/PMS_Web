@@ -1,10 +1,10 @@
-using MailKit.Net.Smtp;
-using MailKit.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using MimeKit;
 using System;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Mail;
+using System.Runtime;
 using System.Threading.Tasks;
 using TaskManagement.Data;
 
@@ -12,7 +12,7 @@ namespace TaskManagement.Services
 {
     public interface IEmailService
     {
-        Task SendAsync(string to, string subject, string htmlBody, string purpose = "other");
+        Task SendAsync(string to, string subject, string htmlBody, string purpose = "other", CancellationToken cancellationToken = default);
     }
 
     public class EmailService : IEmailService
@@ -26,7 +26,7 @@ namespace TaskManagement.Services
             _context = context;
         }
 
-        public async Task SendAsync(string to, string subject, string htmlBody, string purpose = "other")
+        public async Task SendAsync(string to, string subject, string htmlBody, string purpose = "other", CancellationToken cancellationToken = default)
         {
             var host = _config["Email:SmtpHost"] ?? "smtp.gmail.com";
             var port = int.Parse(_config["Email:SmtpPort"] ?? "587");
@@ -55,27 +55,24 @@ namespace TaskManagement.Services
 
             try
             {
-                var message = new MimeMessage();
-                message.From.Add(new MailboxAddress(fromName, fromAddr));
-                message.To.Add(MailboxAddress.Parse(to));
-                message.Subject = subject;
-                message.Body = new TextPart("html") { Text = htmlBody };
+                using var message = new MailMessage
+                {
+                    From = new MailAddress(fromAddr, fromName),
+                    Subject = subject,
+                    Body = htmlBody,
+                    IsBodyHtml = true,
+                };
+                message.To.Add(new MailAddress(to));
 
-                using var client = new SmtpClient();
+				using var client = new SmtpClient(host, port)
+				{
+					Credentials = new NetworkCredential(username, password),
+					EnableSsl = true
+				};
 
-                // Connect with detailed logging
-                await client.ConnectAsync(host, port, SecureSocketOptions.StartTls);
+				await client.SendMailAsync(message, cancellationToken);
 
-                // Authenticate
-                await client.AuthenticateAsync(username, password);
-
-                // Send and capture SMTP response
-                var sendResult = await client.SendAsync(message);
-                var smtpResponse = sendResult?.ToString() ?? "Sent successfully";
-
-                await client.DisconnectAsync(true);
-
-                stopwatch.Stop();
+				stopwatch.Stop();
 
                 // Success log
                 var successLog = new EmailLog
@@ -86,7 +83,7 @@ namespace TaskManagement.Services
                     SmtpPort = port,
                     FromAddress = fromAddr,
                     Status = "Success",
-                    SmtpResponse = smtpResponse,
+                    SmtpResponse = "Sent successfully",
                     Purpose = purpose,
                     StartedAt = startedAt,
                     CompletedAt = AppClock.Now,
