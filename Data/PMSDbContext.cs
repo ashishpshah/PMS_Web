@@ -39,6 +39,7 @@ namespace TaskManagement.Data
         public DbSet<TaskIssueEntry> TaskIssueEntries => Set<TaskIssueEntry>();
         public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
         public DbSet<EmailOtp> EmailOtps => Set<EmailOtp>();
+        public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
 
         // Task Template module
         public DbSet<TaskTemplate>                 TaskTemplates                 => Set<TaskTemplate>();
@@ -1007,6 +1008,27 @@ namespace TaskManagement.Data
         public DateTime ExpiresAt { get; set; }
         public bool     IsUsed    { get; set; } = false;
         public DateTime CreatedAt { get; set; } = AppClock.Now;
+    }
+
+    // ── Email Logging ───────────────────────────────────────────────────────────────
+
+    public class EmailLog
+    {
+        public int Id { get; set; }
+        public string ToEmail { get; set; } = string.Empty;
+        public string Subject { get; set; } = string.Empty;
+        public string SmtpHost { get; set; } = string.Empty;
+        public int SmtpPort { get; set; }
+        public string FromAddress { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty; // "Entry", "Success", "Error"
+        public string? SmtpResponse { get; set; } // SMTP server response
+        public string? ErrorMessage { get; set; }
+        public string? ExceptionType { get; set; }
+        public string? ExceptionStackTrace { get; set; }
+        public DateTime StartedAt { get; set; } = AppClock.Now;
+        public DateTime? CompletedAt { get; set; }
+        public int? DurationMs { get; set; }
+        public string? Purpose { get; set; } // "register" | "reset" | "other"
     }
 
     // ── Task Template module ─────────────────────────────────────────────────────

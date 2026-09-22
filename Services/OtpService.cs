@@ -84,7 +84,7 @@ namespace TaskManagement.Services
 
             try
             {
-                await _email.SendAsync(email, subject, html);
+                await _email.SendAsync(email, subject, html, purpose);
             }
             catch (Exception ex)
             {

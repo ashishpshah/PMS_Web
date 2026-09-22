@@ -495,7 +495,7 @@ export default function Auth() {
               <label className={LABEL_CLS}>Email Address <span className="text-red-500">*</span></label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input type="email" name="forgotEmail" placeholder="Enter your email" autoComplete="email" className={INPUT_CLS} />
+                <input type="email" name="forgotEmail" placeholder="Enter your email" autoComplete="off" className={INPUT_CLS} />
               </div>
             </div>
 

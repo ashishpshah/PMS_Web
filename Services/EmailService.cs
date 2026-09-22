@@ -1,42 +1,126 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using MimeKit;
+using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
+using TaskManagement.Data;
 
 namespace TaskManagement.Services
 {
     public interface IEmailService
     {
-        Task SendAsync(string to, string subject, string htmlBody);
+        Task SendAsync(string to, string subject, string htmlBody, string purpose = "other");
     }
 
     public class EmailService : IEmailService
     {
         private readonly IConfiguration _config;
+        private readonly PMSDbContext _context;
 
-        public EmailService(IConfiguration config) => _config = config;
-
-        public async Task SendAsync(string to, string subject, string htmlBody)
+        public EmailService(IConfiguration config, PMSDbContext context)
         {
-            var host     = _config["Email:SmtpHost"]    ?? "smtp.gmail.com";
-            var port     = int.Parse(_config["Email:SmtpPort"] ?? "587");
-            var username = _config["Email:Username"]    ?? string.Empty;
-            var password = _config["Email:Password"]    ?? string.Empty;
+            _config = config;
+            _context = context;
+        }
+
+        public async Task SendAsync(string to, string subject, string htmlBody, string purpose = "other")
+        {
+            var host = _config["Email:SmtpHost"] ?? "smtp.gmail.com";
+            var port = int.Parse(_config["Email:SmtpPort"] ?? "587");
+            var username = _config["Email:Username"] ?? string.Empty;
+            var password = _config["Email:Password"] ?? string.Empty;
             var fromAddr = _config["Email:FromAddress"] ?? username;
-            var fromName = _config["Email:FromName"]    ?? "PMS";
+            var fromName = _config["Email:FromName"] ?? "PMS";
 
-            var message = new MimeMessage();
-            message.From.Add(new MailboxAddress(fromName, fromAddr));
-            message.To.Add(MailboxAddress.Parse(to));
-            message.Subject = subject;
-            message.Body = new TextPart("html") { Text = htmlBody };
+            var startedAt = AppClock.Now;
+            var stopwatch = Stopwatch.StartNew();
 
-            using var client = new SmtpClient();
-            await client.ConnectAsync(host, port, SecureSocketOptions.StartTls);
-            await client.AuthenticateAsync(username, password);
-            await client.SendAsync(message);
-            await client.DisconnectAsync(true);
+            // Entry log
+            var entryLog = new EmailLog
+            {
+                ToEmail = to,
+                Subject = subject,
+                SmtpHost = host,
+                SmtpPort = port,
+                FromAddress = fromAddr,
+                Status = "Entry",
+                Purpose = purpose,
+                StartedAt = startedAt,
+            };
+            _context.EmailLogs.Add(entryLog);
+            await _context.SaveChangesAsync();
+
+            try
+            {
+                var message = new MimeMessage();
+                message.From.Add(new MailboxAddress(fromName, fromAddr));
+                message.To.Add(MailboxAddress.Parse(to));
+                message.Subject = subject;
+                message.Body = new TextPart("html") { Text = htmlBody };
+
+                using var client = new SmtpClient();
+
+                // Connect with detailed logging
+                await client.ConnectAsync(host, port, SecureSocketOptions.StartTls);
+
+                // Authenticate
+                await client.AuthenticateAsync(username, password);
+
+                // Send and capture SMTP response
+                var sendResult = await client.SendAsync(message);
+                var smtpResponse = sendResult?.ToString() ?? "Sent successfully";
+
+                await client.DisconnectAsync(true);
+
+                stopwatch.Stop();
+
+                // Success log
+                var successLog = new EmailLog
+                {
+                    ToEmail = to,
+                    Subject = subject,
+                    SmtpHost = host,
+                    SmtpPort = port,
+                    FromAddress = fromAddr,
+                    Status = "Success",
+                    SmtpResponse = smtpResponse,
+                    Purpose = purpose,
+                    StartedAt = startedAt,
+                    CompletedAt = AppClock.Now,
+                    DurationMs = (int)stopwatch.ElapsedMilliseconds,
+                };
+                _context.EmailLogs.Add(successLog);
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+
+                // Error log with full details
+                var errorLog = new EmailLog
+                {
+                    ToEmail = to,
+                    Subject = subject,
+                    SmtpHost = host,
+                    SmtpPort = port,
+                    FromAddress = fromAddr,
+                    Status = "Error",
+                    ErrorMessage = ex.Message,
+                    ExceptionType = ex.GetType().FullName,
+                    ExceptionStackTrace = ex.StackTrace,
+                    Purpose = purpose,
+                    StartedAt = startedAt,
+                    CompletedAt = AppClock.Now,
+                    DurationMs = (int)stopwatch.ElapsedMilliseconds,
+                };
+                _context.EmailLogs.Add(errorLog);
+                await _context.SaveChangesAsync();
+
+                throw;
+            }
         }
 
         // ── HTML template helpers ─────────────────────────────────────────────
