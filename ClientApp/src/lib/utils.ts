@@ -24,7 +24,9 @@ export function isValidHoursEntry(hours: number | null | undefined): hours is nu
 
 /** Allowed next statuses for a given status, per the fetched transition graph. */
 export function getAllowedNextStatuses(graph: StatusTransitionGraph, status: Status): Status[] {
-  return Object.keys(graph[status] ?? {}) as Status[];
+  const allowed = Object.keys(graph[status] ?? {}) as Status[];
+  // Never allow transitioning TO blocked from blocked or completed status
+  return allowed.filter(s => !(s === 'blocked' && (status === 'blocked' || status === 'completed')));
 }
 
 /** True when the given (from, to) edge requires ActualHours to be supplied. */

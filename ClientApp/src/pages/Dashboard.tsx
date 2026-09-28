@@ -6,7 +6,7 @@ import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { DashboardSkeleton } from '../components/skeletons/DashboardSkeleton';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
-import { Folder, CheckCircle2, Users, ClipboardCheck, ShieldAlert, UserCheck, Calendar, Clock, Zap, Activity, PauseCircle, Trophy, BookOpen, XCircle, BarChart2, ChevronRight, X, ChevronLeft, Briefcase, TrendingUp, LayoutDashboard } from 'lucide-react';
+import { Folder, CheckCircle2, Users, ClipboardCheck, ShieldAlert, UserCheck, Calendar, Clock, Activity, PauseCircle, Trophy, BookOpen, XCircle, BarChart2, ChevronRight, X, ChevronLeft, Briefcase, TrendingUp, LayoutDashboard, Search } from 'lucide-react';
 import { InteractiveLink } from '../components/ui/InteractiveLink';
 import { Badge } from '../components/ui/Badge';
 import { PageTransition } from '../components/Layout/PageTransition';
@@ -648,15 +648,23 @@ export default function Dashboard() {
 
   // Stat cards + blocked-count derive from dashboardStats (already accurately
   // role/date scoped server-side) rather than the capped task-row fetches above.
-  const blockedCount = dashboardStats?.tasksByStatus.find(s => s.status === 'blocked')?.count ?? 0;
   const activeTaskCount = dashboardStats ? dashboardStats.totalTasks - dashboardStats.completedTasks : 0;
 
   const stats = [
     { id: 1, label: 'Total Projects', value: String(dashboardStats?.totalProjects ?? (Array.isArray(projects) ? projects.length : 0)), icon: Folder, color: 'indigo', href: '/projects' },
-    { id: 2, label: 'Active Tasks', value: String(activeTaskCount), icon: CheckCircle2, color: 'emerald', href: '/tasks' },
-    { id: 3, label: 'Team Members', value: String(Array.isArray(users) ? users.length : 0), icon: Users, color: 'blue', href: '/users' },
-    { id: 4, label: 'Blocked Tasks', value: String(blockedCount), icon: ShieldAlert, color: blockedCount > 0 ? 'red' : 'teal', href: '/tasks' },
+    { id: 2, label: 'Team Members', value: String(Array.isArray(users) ? users.length : 0), icon: Users, color: 'blue', href: '/users' },
+    { id: 3, label: 'Working Member', value: String(effortStats?.usersCurrentlyWorking ?? 0), icon: Activity, color: 'emerald', href: '/tasks' },
+    { id: 4, label: 'Active Tasks', value: String(activeTaskCount), icon: CheckCircle2, color: 'emerald', href: '/tasks' },
   ];
+
+  // Status counts for Row 2
+  const getStatusCount = (status: string) => dashboardStats?.tasksByStatus?.find(s => s.status === status)?.count ?? 0;
+  const inProgressCount = getStatusCount('in-progress');
+  const pausedCount = getStatusCount('paused');
+  const blockedCount = getStatusCount('blocked');
+  const issuesCount = getStatusCount('issues');
+  const reviewCount = getStatusCount('under-review');
+  const blockedIssuesCount = blockedCount + issuesCount;
 
   // Top/latest 10 only — no pagination on these cards.
   const recentTasks = scopedRecentTasks.slice(0, 10);
@@ -727,13 +735,12 @@ export default function Dashboard() {
           })}
         </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
             {([
-              { label: 'Working Hours', value: formatSeconds(effortStats?.workingSeconds ?? 0), icon: Clock, color: 'indigo' },
-              { label: 'Productive Hours', value: formatSeconds(effortStats?.productiveSeconds ?? 0), icon: Zap, color: 'emerald' },
-              { label: 'Currently Working', value: String(effortStats?.usersCurrentlyWorking ?? 0), icon: Activity, color: 'emerald' },
-              { label: 'In Pause / Review', value: String(effortStats?.usersInPauseReview ?? 0), icon: PauseCircle, color: 'amber' },
-              { label: 'Blocked Tasks', value: String(blockedCount), icon: ShieldAlert, color: blockedCount > 0 ? 'red' : 'teal' },
+              { label: 'In Progress', value: String(inProgressCount), icon: Activity, color: 'emerald' },
+              { label: 'Paused', value: String(pausedCount), icon: PauseCircle, color: 'amber' },
+              { label: 'Blocked / Issues', value: String(blockedIssuesCount), icon: ShieldAlert, color: 'red' },
+              { label: 'Review', value: String(reviewCount), icon: Search, color: 'blue' },
             ] as const).map((w, i) => {
               const Icon = w.icon;
               return (
@@ -821,100 +828,139 @@ export default function Dashboard() {
                 </div>
 
                 {/* Tab content */}
-                {(() => {
+{(() => {
                   const byUser = Array.isArray(summary?.byUser) ? summary.byUser : [];
                   const byProject = Array.isArray(summary?.byProject) ? summary.byProject : [];
                   const pagedByUser = paginate(byUser, whUserPage);
                   const pagedByProject = paginate(byProject, whProjectPage);
                   return (
                     <>
-                <div className="overflow-x-auto -mx-5">
-                  {summaryLoading ? (
-                    <div className="p-5"><ReportsRowSkeleton /></div>
-                  ) : !summary || (summaryTab === 'user' && byUser.length === 0) || (summaryTab === 'project' && byProject.length === 0) ? (
-                    <div className="p-8 text-center text-[12px] text-gray-400 italic">No data for the selected filters and period.</div>
-                  ) : summaryTab === 'user' ? (
-                    <table className="w-full text-sm">
-                      <thead className="border-b border-gray-100 dark:border-gray-800">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500">User</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500">Tasks</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-emerald-600">Productive</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-amber-600">Paused</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-rose-600">Blocked</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-purple-600">Review</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-blue-600">Est.&nbsp;Hours</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-indigo-600">Working Hours</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">%&nbsp;Productive</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
-                        {pagedByUser.pageItems.map(u => {
-                          const pct = u.totalSeconds > 0 ? Math.round((u.productiveSeconds / u.totalSeconds) * 100) : 0;
-                          return (
-                            <tr key={u.userId} className="hover:bg-gray-50/60 dark:hover:bg-gray-900/40 transition-colors">
-                              <td className="px-3 py-2.5">
-                                <button onClick={() => setModalUser({ id: u.userId, name: u.userName, avatar: u.avatarUrl })} className="flex items-center gap-2 group text-left">
-                                  <img src={reportsAvatarUrl(u.userName, u.avatarUrl)} alt="" className="h-6 w-6 rounded border border-gray-100 dark:border-gray-800 object-cover shrink-0" />
-                                  <span className="text-[13px] font-semibold text-gray-700 dark:text-gray-200 truncate max-w-[130px] group-hover:text-indigo-600 underline underline-offset-2 decoration-dotted">{u.userName}</span>
-                                </button>
-                              </td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-gray-500">{u.taskCount}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatSeconds(u.productiveSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-amber-600 dark:text-amber-400">{formatSeconds(u.pausedSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-rose-600 dark:text-rose-400">{formatSeconds(u.blockedSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-purple-600 dark:text-purple-400">{formatSeconds(u.underReviewSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-indigo-600 dark:text-indigo-400">{toHHMM(u.workingHoursSpent)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-blue-600 dark:text-blue-400">{toHHMM(u.estimatedHours)}</td>
-                              <td className="px-3 py-2.5 min-w-[100px]">
-                                <div className="flex items-center gap-1.5">
-                                  <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                  <div className="overflow-x-auto -mx-5">
+                    {summaryLoading ? (
+                      <div className="p-5"><ReportsRowSkeleton /></div>
+                    ) : !summary || (summaryTab === 'user' && byUser.length === 0) || (summaryTab === 'project' && byProject.length === 0) ? (
+                      <div className="p-8 text-center text-[12px] text-gray-400 italic">No data for the selected filters and period.</div>
+                    ) : summaryTab === 'user' ? (
+                      <table className="w-full min-w-[1100px] text-sm">
+                        <thead className="sticky top-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 z-10">
+                          <tr>
+                            <th className="px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap sticky left-0 bg-white/95 dark:bg-gray-900/95 z-10 border-r border-gray-100 dark:border-gray-800">User</th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">Total</th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="h-2 w-2 rounded-full bg-gray-400" />
+                                New
+                              </span>
+                            </th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="h-2 w-2 rounded-full bg-indigo-500" />
+                                In Progress
+                              </span>
+                            </th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                                Paused
+                              </span>
+                            </th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="h-2 w-2 rounded-full bg-red-500" />
+                                Blocked
+                              </span>
+                            </th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="h-2 w-2 rounded-full bg-purple-500" />
+                                Review
+                              </span>
+                            </th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="h-2 w-2 rounded-full bg-orange-500" />
+                                Issues
+                              </span>
+                            </th>
+                            <th className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">
+                              <span className="flex items-center justify-center gap-1">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                Completed
+                              </span>
+                            </th>
+                            <th className="px-3 py-2.5 text-right text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 whitespace-nowrap">Working Hours</th>
+                            <th className="px-3 py-2.5 text-center text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">% Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
+                          {pagedByUser.pageItems.map(u => {
+                            const totalHours = u.workingHoursSpent ?? 0;
+                            const totalHoursStr = totalHours > 0 
+                              ? `${Math.floor(totalHours).toString().padStart(2, '0')}:${Math.round((totalHours % 1) * 60).toString().padStart(2, '0')}`
+                              : '00:00';
+                            const totalPct = totalHours > 0 ? Math.round((totalHours / 180) * 100) : 0;
+                            return (
+                              <tr key={u.userId} className="hover:bg-gray-50/60 dark:hover:bg-gray-900/40 transition-colors">
+                                <td className="px-3 py-2 sticky left-0 bg-white/95 dark:bg-gray-900/95 z-10 border-r border-gray-100 dark:border-gray-800">
+                                  <button onClick={() => setModalUser({ id: u.userId, name: u.userName, avatar: u.avatarUrl })} className="flex items-center gap-2 group text-left">
+                                    <img src={reportsAvatarUrl(u.userName, u.avatarUrl)} alt="" className="h-6 w-6 rounded border border-gray-100 dark:border-gray-800 object-cover shrink-0" />
+                                    <span className="text-[13px] font-semibold text-gray-700 dark:text-gray-200 truncate max-w-[130px] group-hover:text-indigo-600 underline underline-offset-2 decoration-dotted">{u.userName}</span>
+                                  </button>
+                                </td>
+                                <td className="px-2 py-2 text-center">
+                                  <span className={`text-[12px] font-mono font-bold ${u.totalTasks > 0 ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400'}`}>
+                                    {u.totalTasks > 0 ? u.totalTasks : '—'}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-2 text-center text-[12px] font-mono font-medium text-gray-700 dark:text-gray-300">{u.newTasks ?? 0}</td>
+                                <td className="px-2 py-2 text-center text-[12px] font-mono font-medium text-indigo-600 dark:text-indigo-400">{u.inProgressTasks ?? 0}</td>
+                                <td className="px-2 py-2 text-center text-[12px] font-mono font-medium text-amber-600 dark:text-amber-400">{u.pausedTasks ?? 0}</td>
+                                <td className="px-2 py-2 text-center text-[12px] font-mono font-medium text-red-600 dark:text-red-400">{u.blockedTasks ?? 0}</td>
+                                <td className="px-2 py-2 text-center text-[12px] font-mono font-medium text-purple-600 dark:text-purple-400">{u.underReviewTasks ?? 0}</td>
+                                <td className="px-2 py-2 text-center text-[12px] font-mono font-medium text-orange-600 dark:text-orange-400">{u.issuesTasks ?? 0}</td>
+                                <td className="px-2 py-2 text-center text-[12px] font-mono font-medium text-emerald-600 dark:text-emerald-400">{u.completedTasks ?? 0}</td>
+                                <td className="px-3 py-2 text-right text-[12px] font-mono font-black text-indigo-700 dark:text-indigo-300">{totalHoursStr}</td>
+                                <td className="px-3 py-2 text-center min-w-[80px]">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <div className="flex-1 max-w-[60px] h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(totalPct, 100)}%` }} />
+                                    </div>
+                                    <span className="text-[10px] font-mono font-black text-indigo-600 dark:text-indigo-400 w-10 shrink-0">{Math.min(totalPct, 100)}%</span>
                                   </div>
-                                  <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 w-8 shrink-0">{pct}%</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  ) : (
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+) : (
                     <table className="w-full text-sm">
-                      <thead className="border-b border-gray-100 dark:border-gray-800">
+                      <thead className="sticky top-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 z-10">
                         <tr>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500">Project</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500">Tasks</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500">Users</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-emerald-600">Productive</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-amber-600">Paused</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-rose-600">Blocked</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-purple-600">Review</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500">Total</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">%&nbsp;Productive</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap sticky left-0 bg-white/95 dark:bg-gray-900/95 z-10 border-r border-gray-100 dark:border-gray-800">Project</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">Total Tasks</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 whitespace-nowrap">Total Est. Hours</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 whitespace-nowrap">Total Working Hours</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-black uppercase tracking-widest text-gray-500 whitespace-nowrap">Users</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50 dark:divide-gray-900">
                         {pagedByProject.pageItems.map(p => {
-                          const pct = p.totalSeconds > 0 ? Math.round((p.productiveSeconds / p.totalSeconds) * 100) : 0;
+                          const totalEst = p.totalEstimatedHours ?? 0;
+                          const totalEstStr = totalEst > 0
+                            ? `${Math.floor(totalEst).toString().padStart(2, '0')}:${Math.round((totalEst % 1) * 60).toString().padStart(2, '0')}`
+                            : '00:00';
+                          const totalWork = p.totalWorkingHoursSpent ?? 0;
+                          const totalWorkStr = totalWork > 0
+                            ? `${Math.floor(totalWork).toString().padStart(2, '0')}:${Math.round((totalWork % 1) * 60).toString().padStart(2, '0')}`
+                            : '00:00';
                           return (
                             <tr key={p.projectId} className="hover:bg-gray-50/60 dark:hover:bg-gray-900/40 transition-colors">
-                              <td className="px-3 py-2.5 text-[13px] font-semibold text-gray-700 dark:text-gray-200 max-w-[180px] truncate">{p.projectName}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-gray-500">{p.taskCount}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-gray-500">{p.userCount}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatSeconds(p.productiveSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-amber-600 dark:text-amber-400">{formatSeconds(p.pausedSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-rose-600 dark:text-rose-400">{formatSeconds(p.blockedSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-purple-600 dark:text-purple-400">{formatSeconds(p.underReviewSeconds)}</td>
-                              <td className="px-3 py-2.5 text-[12px] font-mono font-bold text-gray-500 dark:text-gray-400">{formatSeconds(p.totalSeconds)}</td>
-                              <td className="px-3 py-2.5 min-w-[100px]">
-                                <div className="flex items-center gap-1.5">
-                                  <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
-                                  </div>
-                                  <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 w-8 shrink-0">{pct}%</span>
-                                </div>
-                              </td>
+                              <td className="px-3 py-2 sticky left-0 bg-white/95 dark:bg-gray-900/95 z-10 border-r border-gray-100 dark:border-gray-800 text-[13px] font-semibold text-gray-700 dark:text-gray-200 max-w-[180px] truncate">{p.projectName}</td>
+                              <td className="px-3 py-2 text-right text-[12px] font-mono font-bold text-gray-700 dark:text-gray-300">{p.totalTasks}</td>
+                              <td className="px-3 py-2 text-right text-[12px] font-mono font-medium text-amber-600 dark:text-amber-400">{totalEstStr}</td>
+                              <td className="px-3 py-2 text-right text-[12px] font-mono font-black text-indigo-700 dark:text-indigo-300">{totalWorkStr}</td>
+                              <td className="px-3 py-2 text-right text-[12px] font-mono font-bold text-gray-500 dark:text-gray-400">{p.userCount}</td>
                             </tr>
                           );
                         })}

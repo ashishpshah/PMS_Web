@@ -24,12 +24,16 @@ namespace TaskManagement.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            SafeLogInformation(_logger, "OtpCleanupService started.");
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 await CleanupAsync(stoppingToken);
                 try { await Task.Delay(Interval, stoppingToken); }
                 catch (OperationCanceledException) { break; }
             }
+
+            SafeLogInformation(_logger, "OtpCleanupService stopped.");
         }
 
         private async Task CleanupAsync(CancellationToken ct)
@@ -48,13 +52,25 @@ namespace TaskManagement.Services
                 {
                     context.EmailOtps.RemoveRange(stale);
                     await context.SaveChangesAsync(ct);
-                    _logger.LogInformation("OtpCleanup: removed {Count} stale OTP records.", stale.Count);
+                    SafeLogInformation(_logger, "OtpCleanup: removed {Count} stale OTP records.", stale.Count);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "OtpCleanup: error during cleanup pass.");
+                SafeLogError(_logger, ex, "OtpCleanup: error during cleanup pass.");
             }
+        }
+
+        private static void SafeLogInformation(ILogger logger, string message, params object[] args)
+        {
+            try { logger.LogInformation(message, args); }
+            catch (ObjectDisposedException) { /* logger disposed during shutdown */ }
+        }
+
+        private static void SafeLogError(ILogger logger, Exception ex, string message, params object[] args)
+        {
+            try { logger.LogError(ex, message, args); }
+            catch (ObjectDisposedException) { /* logger disposed during shutdown */ }
         }
     }
 }

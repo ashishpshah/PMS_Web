@@ -44,9 +44,9 @@ namespace TaskManagement.Services
             var taskIds = tasks.Select(t => t.Id).ToHashSet();
 
             // Only load status transitions up to the window end — future rows don't affect segments
-            var statusByTask = (await _context.TaskStatusHistories
-                    .Where(h => taskIds.Contains(h.TaskId) && h.ChangedAt <= winEnd)
-                    .OrderBy(h => h.ChangedAt)
+var statusByTask = (await _context.TaskStatusHistories
+                    .Where(h => taskIds.Contains(h.TaskId))
+                    .OrderBy(h => h.StartTimestamp)
                     .ToListAsync(ct))
                 .GroupBy(h => h.TaskId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());
@@ -160,8 +160,8 @@ namespace TaskManagement.Services
 
             // Load status histories within the window.
             var historyRows = await _context.TaskStatusHistories
-                .Where(h => taskIds2.Contains(h.TaskId) && h.ChangedAt >= winStart && h.ChangedAt < winEnd)
-                .OrderBy(h => h.ChangedAt)
+                .Where(h => taskIds2.Contains(h.TaskId) && h.StartTimestamp >= winStart && h.StartTimestamp < winEnd)
+                .OrderBy(h => h.StartTimestamp)
                 .ToListAsync(ct);
 
             // Load assignment histories only for relevant tasks.
@@ -185,17 +185,17 @@ namespace TaskManagement.Services
                 var windows = EffortHelpers.BuildAssignmentWindows(task.CreatedAt, assignRows, task.AssignedToId, now);
 
                 // Find who was assigned at the time of this transition.
-                var assignee = windows.FirstOrDefault(w => w.UserId != 0 && h.ChangedAt >= w.Start && h.ChangedAt < w.End);
+                var assignee = windows.FirstOrDefault(w => w.UserId != 0 && h.StartTimestamp >= w.Start && h.StartTimestamp < w.End);
                 var uid = assignee.UserId == 0
-                    ? windows.LastOrDefault(w => w.UserId != 0 && h.ChangedAt >= w.Start).UserId
+                    ? windows.LastOrDefault(w => w.UserId != 0 && h.StartTimestamp >= w.Start).UserId
                     : assignee.UserId;
 
                 if (uid == 0) continue;
 
                 if (!perUserTransitions.TryGetValue(uid, out var tmap))
-                    perUserTransitions[uid] = tmap = new Dictionary<(string, string), int>();
+                    perUserTransitions[uid] = tmap = new Dictionary<(string from, string to), int>();
 
-                var key = (h.FromStatus ?? string.Empty, h.ToStatus ?? string.Empty);
+                var key = (from: h.FromStatus ?? string.Empty, to: h.ToStatus ?? string.Empty);
                 tmap.TryGetValue(key, out var cnt);
                 tmap[key] = cnt + 1;
             }
@@ -266,7 +266,7 @@ namespace TaskManagement.Services
 
             var statusByTask = (await _context.TaskStatusHistories
                     .Where(h => taskIds.Contains(h.TaskId))
-                    .OrderBy(h => h.ChangedAt)
+                    .OrderBy(h => h.StartTimestamp)
                     .ToListAsync(ct))
                 .GroupBy(h => h.TaskId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());
@@ -382,7 +382,7 @@ namespace TaskManagement.Services
 
             var statusByTask = (await _context.TaskStatusHistories
                     .Where(h => taskIds.Contains(h.TaskId))
-                    .OrderBy(h => h.ChangedAt)
+                    .OrderBy(h => h.StartTimestamp)
                     .ToListAsync(ct))
                 .GroupBy(h => h.TaskId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());
@@ -526,13 +526,6 @@ namespace TaskManagement.Services
 
             var taskIds = tasks.Select(t => t.Id).ToList();
 
-            var statusByTask = (await _context.TaskStatusHistories
-                    .Where(h => taskIds.Contains(h.TaskId))
-                    .OrderBy(h => h.ChangedAt)
-                    .ToListAsync(ct))
-                .GroupBy(h => h.TaskId)
-                .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());
-
             var assignByTask = (await _context.TaskAssignmentHistories
                     .Where(h => taskIds.Contains(h.TaskId))
                     .OrderBy(h => h.ChangedAt)
@@ -540,21 +533,15 @@ namespace TaskManagement.Services
                 .GroupBy(h => h.TaskId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskAssignmentHistory>)g.ToList());
 
-            // All active projects in scope (or just the one filtered project, active or not —
-            // an explicit selection always wins) — used both to seed "By Project" so it always
-            // lists every active project (zero-filled), and as the ProjectName lookup for By
-            // Task/By Project rows built from actual task data.
+            // All active projects in scope (or just the one filtered project, active or not)
             var projectsForSeed = await (filterProjectId.HasValue
                     ? _context.Projects.Where(p => p.Id == filterProjectId.Value)
                     : _context.Projects.Where(p => p.Status == "active"))
                 .Select(p => new { p.Id, p.Name })
                 .ToListAsync(ct);
             var projectNames = projectsForSeed.ToDictionary(p => p.Id, p => p.Name);
-            // Guards the final ByProject output against non-active projects sneaking in via
-            // the dynamic-creation fallback below (e.g. a task on a since-archived project).
             var activeProjectIdSet = new HashSet<int>(projectsForSeed.Select(p => p.Id));
 
-            var emptyStatus = new List<TaskStatusHistory>();
             var emptyAssign = new List<TaskAssignmentHistory>();
 
             // Accumulators keyed by userId / taskId / projectId
@@ -565,20 +552,13 @@ namespace TaskManagement.Services
             // Track distinct users per project
             var projectUsers = new Dictionary<int, HashSet<int>>();
 
-            // ── Pre-seed byUser/byProject with every active user/project (zero-filled) so
-            // the "By User"/"By Project" tabs always list the whole active roster, even with
-            // no tracked time in the current filter/period. Matches the app's "show the whole
-            // team" convention used elsewhere (see GetProjectStatusMatrixAsync). An explicit
-            // filterUserId selection always wins, active or not. The SystemAdmin account
-            // (RoleId 1) is never shown — it's a root/utility account, not a team member.
+            // ── Pre-seed byUser/byProject with every active user/project (zero-filled)
             var usersForSeed = await (filterUserId.HasValue
                     ? _context.Users.Where(u => u.Id == filterUserId.Value)
                     : _context.Users.Where(u => u.IsActive))
                 .Where(u => u.RoleId != 1)
                 .Select(u => new { u.Id, u.FullName, u.AvatarUrl })
                 .ToListAsync(ct);
-            // Guards the final ByUser output against inactive users sneaking in via the
-            // dynamic-creation fallback below (e.g. a deactivated user with historical time).
             var activeUserIdSet = new HashSet<int>(usersForSeed.Select(u => u.Id));
             foreach (var u in usersForSeed)
                 byUser[u.Id] = new HoursSummaryUserRowDto { UserId = u.Id, UserName = u.FullName, AvatarUrl = u.AvatarUrl };
@@ -586,100 +566,70 @@ namespace TaskManagement.Services
             foreach (var p in projectsForSeed)
                 byProject[p.Id] = new HoursSummaryProjectRowDto { ProjectId = p.Id, ProjectName = p.Name };
 
+            // ── Compute task counts by CURRENT STATUS for each user
             foreach (var t in tasks)
             {
-                var statusRows = statusByTask.TryGetValue(t.Id, out var sr) ? sr : emptyStatus;
                 var assignRows = assignByTask.TryGetValue(t.Id, out var ar) ? ar : emptyAssign;
-
-                var segments = EffortHelpers.BuildStatusSegments(t.CreatedAt, t.Status, statusRows, now);
-                if (segments.Count == 0) continue;
-
                 var windows = EffortHelpers.BuildAssignmentWindows(t.CreatedAt, assignRows, t.AssignedToId, now);
 
-                // If filtering by user, skip tasks where user was never assigned.
-                if (filterUserId.HasValue && !windows.Any(w => w.UserId == filterUserId.Value)) continue;
+                // Determine which users were assigned to this task during the date window
+                var assignedUserIds = windows
+                    .Where(w => w.UserId != 0 && w.Start < winEnd && w.End > winStart)
+                    .Select(w => w.UserId)
+                    .Distinct()
+                    .ToList();
 
-                foreach (var s in segments)
-                {
-                    var segWinStart = s.StartAt > winStart ? s.StartAt : winStart;
-                    var segWinEnd   = s.EndAt   < winEnd   ? s.EndAt   : winEnd;
-                    if (segWinEnd <= segWinStart) continue;
+                if (filterUserId.HasValue && !assignedUserIds.Contains(filterUserId.Value))
+                    continue;
 
-                    var statusLower = (s.Status ?? string.Empty).ToLowerInvariant();
-                    bool isProd   = statusLower == "in-progress";
-                    bool isBlock  = statusLower == "blocked";
-                    bool isReview = statusLower == "under-review";
-                    bool counts   = isProd || isBlock || isReview;
-                    if (!counts) continue;
-
-                    foreach (var w in windows)
-                    {
-                        if (w.UserId == 0) continue;
-                        if (filterUserId.HasValue && w.UserId != filterUserId.Value) continue;
-
-                        var intStart = segWinStart > w.Start ? segWinStart : w.Start;
-                        var intEnd   = segWinEnd   < w.End   ? segWinEnd   : w.End;
-                        if (intEnd <= intStart) continue;
-
-                        var ov = EffortHelpers.Overlap(intStart, intEnd);
-                        if (ov <= 0) continue;
-
-                        // ── by User ──
-                        if (!byUser.TryGetValue(w.UserId, out var uRow))
-                            byUser[w.UserId] = uRow = new HoursSummaryUserRowDto { UserId = w.UserId };
-                        if (isProd)   uRow.ProductiveSeconds  += ov;
-                        if (isBlock)  uRow.BlockedSeconds     += ov;
-                        if (isReview) uRow.UnderReviewSeconds += ov;
-                        uRow.TotalSeconds += ov;
-
-                        // ── by Task ──
-                        if (!byTask.TryGetValue(t.Id, out var tRow))
-                            byTask[t.Id] = tRow = new HoursSummaryTaskRowDto
-                            {
-                                TaskId      = t.Id,
-                                TaskCode    = t.Code ?? string.Empty,
-                                TaskTitle   = t.Title,
-                                TaskStatus  = t.Status,
-                                ProjectId   = t.ProjectId,
-                                ProjectName = projectNames.TryGetValue(t.ProjectId, out var pn) ? pn : string.Empty,
-                            };
-                        if (isProd)   tRow.ProductiveSeconds  += ov;
-                        if (isBlock)  tRow.BlockedSeconds     += ov;
-                        if (isReview) tRow.UnderReviewSeconds += ov;
-                        tRow.TotalSeconds += ov;
-
-                        // ── by Project ──
-                        if (!byProject.TryGetValue(t.ProjectId, out var pRow))
-                            byProject[t.ProjectId] = pRow = new HoursSummaryProjectRowDto
-                            {
-                                ProjectId   = t.ProjectId,
-                                ProjectName = projectNames.TryGetValue(t.ProjectId, out var pn2) ? pn2 : string.Empty,
-                            };
-                        if (isProd)   pRow.ProductiveSeconds  += ov;
-                        if (isBlock)  pRow.BlockedSeconds     += ov;
-                        if (isReview) pRow.UnderReviewSeconds += ov;
-                        pRow.TotalSeconds += ov;
-
-                        if (!projectUsers.TryGetValue(t.ProjectId, out var pu))
-                            projectUsers[t.ProjectId] = pu = new HashSet<int>();
-                        pu.Add(w.UserId);
-                    }
-                }
-
-                // Count distinct tasks per user and per project
-                foreach (var uid in windows.Where(w => w.UserId != 0).Select(w => w.UserId).Distinct())
+                foreach (var uid in assignedUserIds)
                 {
                     if (filterUserId.HasValue && uid != filterUserId.Value) continue;
-                    if (byUser.TryGetValue(uid, out var ur) && ur.TotalSeconds > 0)
+
+                    if (!byUser.TryGetValue(uid, out var uRow))
+                        byUser[uid] = uRow = new HoursSummaryUserRowDto { UserId = uid };
+
+                    // Increment task count for the task's CURRENT status
+                    var statusLower = (t.Status ?? string.Empty).ToLowerInvariant();
+                    switch (statusLower)
                     {
-                        ur.TaskCount++;
-                        ur.EstimatedHours += t.EstimatedHours ?? 0;
+                        case "new":           uRow.NewTasks++; break;
+                        case "in-progress":   uRow.InProgressTasks++; break;
+                        case "paused":        uRow.PausedTasks++; break;
+                        case "blocked":       uRow.BlockedTasks++; break;
+                        case "under-review":  uRow.UnderReviewTasks++; break;
+                        case "issues":        uRow.IssuesTasks++; break;
+                        case "completed":     uRow.CompletedTasks++; break;
                     }
-                }
-                if (byTask.ContainsKey(t.Id))
-                {
-                    if (!byProject.TryGetValue(t.ProjectId, out var pr)) { }
-                    else pr.TaskCount++;
+                    uRow.TotalTasks++;
+
+                    // ── by Task ──
+                    if (!byTask.TryGetValue(t.Id, out var tRow))
+                        byTask[t.Id] = tRow = new HoursSummaryTaskRowDto
+                        {
+                            TaskId          = t.Id,
+                            TaskCode        = t.Code ?? string.Empty,
+                            TaskTitle       = t.Title,
+                            TaskStatus      = t.Status,
+                            ProjectId       = t.ProjectId,
+                            ProjectName     = projectNames.TryGetValue(t.ProjectId, out var pn) ? pn : string.Empty,
+                            AssignedUserId  = t.AssignedToId ?? 0,
+                            EstimatedHours  = t.EstimatedHours ?? 0m,
+                        };
+
+                    // ── by Project ──
+                    if (!byProject.TryGetValue(t.ProjectId, out var pRow))
+                        byProject[t.ProjectId] = pRow = new HoursSummaryProjectRowDto
+                        {
+                            ProjectId   = t.ProjectId,
+                            ProjectName = projectNames.TryGetValue(t.ProjectId, out var pn2) ? pn2 : string.Empty,
+                        };
+                    pRow.TotalTasks++;
+                    pRow.TotalEstimatedHours += t.EstimatedHours ?? 0m;
+
+                    if (!projectUsers.TryGetValue(t.ProjectId, out var pu))
+                        projectUsers[t.ProjectId] = pu = new HashSet<int>();
+                    pu.Add(uid);
                 }
             }
 
@@ -687,19 +637,34 @@ namespace TaskManagement.Services
             foreach (var kv in projectUsers)
                 if (byProject.TryGetValue(kv.Key, out var pr)) pr.UserCount = kv.Value.Count;
 
-            // ── Working Hours Spent — sum of self-reported ActualHours logged on each
-            // status transition (TaskStatusHistory.ActualHours), attributed to whoever
-            // made that transition. This is distinct from ProductiveSeconds/TotalSeconds
-            // above, which are auto-reconstructed from status-history timing rather than
-            // user-entered. Scoped by the same project filter (via taskIds) and date
-            // window (via ChangedAt) as the rest of this report.
-            var actualHoursRows = await _context.TaskStatusHistories
+            // ── Working Hours Spent per task (ActualHours from TaskStatusHistory)
+            // Attributed to the task, not the user, for ByTask/ByProject views
+            var taskActualHours = await _context.TaskStatusHistories
                 .Where(h => taskIds.Contains(h.TaskId) && h.ActualHours != null
-                         && h.ChangedAt >= winStart && h.ChangedAt < winEnd)
+                         && h.StartTimestamp >= winStart && h.StartTimestamp < winEnd)
+                .GroupBy(h => h.TaskId)
+                .Select(g => new { TaskId = g.Key, TotalHours = g.Sum(h => h.ActualHours ?? 0m) })
+                .ToListAsync(ct);
+
+            foreach (var row in taskActualHours)
+            {
+                if (byTask.TryGetValue(row.TaskId, out var tRow))
+                    tRow.WorkingHoursSpent = row.TotalHours;
+
+                // Also accumulate to project
+                var task = tasks.FirstOrDefault(t => t.Id == row.TaskId);
+                if (task != null && byProject.TryGetValue(task.ProjectId, out var pRow))
+                    pRow.TotalWorkingHoursSpent += row.TotalHours;
+            }
+
+            // ── User-level WorkingHoursSpent (for ByUser) — attributed to who logged the hours
+            var userActualHours = await _context.TaskStatusHistories
+                .Where(h => taskIds.Contains(h.TaskId) && h.ActualHours != null
+                         && h.StartTimestamp >= winStart && h.StartTimestamp < winEnd)
                 .Select(h => new { h.ChangedById, h.ActualHours })
                 .ToListAsync(ct);
 
-            foreach (var row in actualHoursRows)
+            foreach (var row in userActualHours)
             {
                 if (filterUserId.HasValue && row.ChangedById != filterUserId.Value) continue;
                 if (!byUser.TryGetValue(row.ChangedById, out var uRowHrs))
@@ -707,7 +672,23 @@ namespace TaskManagement.Services
                 uRowHrs.WorkingHoursSpent += row.ActualHours ?? 0;
             }
 
-            // Bulk-load user names + avatars
+            // Fill AssignedUserName for tasks
+            var taskAssignedUserIds = byTask.Values.Where(t => t.AssignedUserId > 0).Select(t => t.AssignedUserId).Distinct().ToList();
+            if (taskAssignedUserIds.Count > 0)
+            {
+                var assignedUserNames = await _context.Users
+                    .Where(u => taskAssignedUserIds.Contains(u.Id))
+                    .Select(u => new { u.Id, u.FullName })
+                    .ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+
+                foreach (var tRow in byTask.Values)
+                {
+                    if (tRow.AssignedUserId > 0 && assignedUserNames.TryGetValue(tRow.AssignedUserId, out var name))
+                        tRow.AssignedUserName = name;
+                }
+            }
+
+            // Bulk-load user names + avatars for ByUser
             var userIds = byUser.Keys.ToList();
             var userInfo = await _context.Users
                 .Where(u => userIds.Contains(u.Id))
@@ -721,13 +702,13 @@ namespace TaskManagement.Services
                 kv.Value.AvatarUrl = info.AvatarUrl;
             }
 
-            // Final active-only view — guards against inactive users / non-active projects
-            // that got dynamically created above (e.g. via a task's actual-hours history)
-            // rather than the pre-seed, so "only active" holds no matter how a row was added.
+            // Final active-only view
             var activeByUser = byUser.Values.Where(u => activeUserIdSet.Contains(u.UserId)).ToList();
 
-            var totalProd    = activeByUser.Sum(u => u.ProductiveSeconds);
-            var totalWorking = activeByUser.Sum(u => u.TotalSeconds);
+            // Sort by TotalTasks desc, then WorkingHoursSpent desc
+            activeByUser = activeByUser.OrderByDescending(u => u.TotalTasks).ThenByDescending(u => u.WorkingHoursSpent).ToList();
+
+            var totalWorkingHours = activeByUser.Sum(u => (double)u.WorkingHoursSpent);
 
             return new ApiResponse<HoursSummaryDto>
             {
@@ -736,13 +717,14 @@ namespace TaskManagement.Services
                 {
                     FromUtc                = fromUtc,
                     ToUtc                  = toUtc,
-                    TotalProductiveSeconds = totalProd,
-                    TotalWorkingSeconds    = totalWorking,
+                    TotalProductiveSeconds = 0, // Not used in new design
+                    TotalWorkingSeconds    = 0, // Not used in new design
                     FilterUserId           = filterUserId,
                     FilterProjectId        = filterProjectId,
-                    ByUser    = activeByUser.OrderByDescending(u => u.ProductiveSeconds).ToList(),
-                    ByTask    = byTask.Values.OrderByDescending(t => t.ProductiveSeconds).ToList(),
-                    ByProject = byProject.Values.Where(p => activeProjectIdSet.Contains(p.ProjectId)).OrderByDescending(p => p.ProductiveSeconds).ToList(),
+                    ByUser    = activeByUser,
+                    ByTask    = byTask.Values.OrderByDescending(t => t.WorkingHoursSpent).ToList(),
+                    ByProject = byProject.Values.Where(p => activeProjectIdSet.Contains(p.ProjectId))
+                                             .OrderByDescending(p => p.TotalWorkingHoursSpent).ToList(),
                 }
             };
         }
@@ -784,7 +766,7 @@ namespace TaskManagement.Services
 
             var statusByTask = (await _context.TaskStatusHistories
                     .Where(h => taskIds.Contains(h.TaskId))
-                    .OrderBy(h => h.ChangedAt)
+                    .OrderBy(h => h.StartTimestamp)
                     .ToListAsync(ct))
                 .GroupBy(h => h.TaskId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());

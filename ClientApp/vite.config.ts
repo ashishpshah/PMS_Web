@@ -33,6 +33,22 @@ export default defineConfig(() => {
           target: 'http://localhost:5178',
           changeOrigin: true,
           secure: false,
+          configure: (proxy, _options) => {
+            proxy.on('proxyReq', (proxyReq, req, _res) => {
+              // Forward cookies from client to backend
+              const cookie = req.headers.cookie;
+              if (cookie) {
+                proxyReq.setHeader('cookie', cookie);
+              }
+            });
+            proxy.on('proxyRes', (proxyRes, req, res) => {
+              // Forward cookies from backend to client
+              const cookies = proxyRes.headers['set-cookie'];
+              if (cookies) {
+                res.setHeader('set-cookie', cookies);
+              }
+            });
+          },
         },
         '/hubs': {
           target: 'http://localhost:5178',

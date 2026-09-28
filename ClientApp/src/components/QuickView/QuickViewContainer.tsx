@@ -1116,9 +1116,12 @@ export function QuickViewContainer() {
                           {/* Meta */}
                           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[8px] text-gray-400 font-mono">
                             <span className="font-semibold text-gray-600 dark:text-gray-300">{h.changedByName}</span>
-                            <span>{formatDateTime(h.changedAt)}</span>
+                            <span>{h.endTimestamp ? formatDateTime(h.endTimestamp) : formatDateTime(h.changedAt)}</span>
                             {h.actualHours != null && h.actualHours > 0 && (
                               <span className="text-emerald-600 dark:text-emerald-400 font-black">⏱ {toHHMM(h.actualHours)}</span>
+                            )}
+                            {h.spentHours != null && h.spentHours > 0 && (
+                              <span className="text-indigo-600 dark:text-indigo-400 font-black">⏱ {toHHMM(h.spentHours)}</span>
                             )}
                             {h.reason && <span className="italic">"{h.reason}"</span>}
                           </div>

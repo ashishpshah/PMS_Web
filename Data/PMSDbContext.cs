@@ -200,6 +200,12 @@ namespace TaskManagement.Data
             modelBuilder.Entity<TaskStatusHistory>()
                 .Property(h => h.Action).HasMaxLength(50);
             modelBuilder.Entity<TaskStatusHistory>()
+                .Property(h => h.StartTimestamp).HasDefaultValueSql("GETUTCDATE()");
+            modelBuilder.Entity<TaskStatusHistory>()
+                .Property(h => h.SpentHours).HasColumnType("decimal(18,2)");
+            modelBuilder.Entity<TaskStatusHistory>()
+                .Property(h => h.ActualHours).HasColumnType("decimal(18,2)");
+            modelBuilder.Entity<TaskStatusHistory>()
                 .HasOne(h => h.Task)
                 .WithMany(t => t.StatusHistory)
                 .HasForeignKey(h => h.TaskId)
@@ -760,7 +766,13 @@ namespace TaskManagement.Data
         // Hours the user reports for the status being entered (ToStatus).
         // Compulsory except when entering new / paused / blocked / issues.
         public decimal? ActualHours { get; set; }
-        public DateTime ChangedAt { get; set; } = AppClock.Now;
+        
+        // Timestamp when this status entry began
+        public DateTime StartTimestamp { get; set; } = AppClock.Now;
+        // Timestamp when this status entry ended (null = currently active)
+        public DateTime? EndTimestamp { get; set; }
+        // System-calculated elapsed time in this status (EndTimestamp - StartTimestamp)
+        public decimal? SpentHours { get; set; }
     }
 
     public class TaskTag
@@ -1236,8 +1248,8 @@ namespace TaskManagement.Data
         public int BreakMinMinutes { get; set; } = 30;
         public int BreakMaxMinutes { get; set; } = 60;
         // CSV list of Nth-Saturday-of-month occurrences (1-5) that are a full day off. Default:
-        // 1st/3rd/5th off, 2nd/4th a full working day.
-        public string HolidaySaturdayOccurrences { get; set; } = "1,3,5";
+        // 2nd/4th off, 1st/3rd/5th a full working day.
+        public string HolidaySaturdayOccurrences { get; set; } = "2,4";
         public DateTime UpdatedAt { get; set; } = AppClock.Now;
         public int? UpdatedByUserId { get; set; }
         public User? UpdatedByUser { get; set; }

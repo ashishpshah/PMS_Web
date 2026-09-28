@@ -115,8 +115,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const apiBase = import.meta.env.VITE_API_URL || '/api';
     fetch(`${apiBase}/auth/logout`, {
       method: 'POST',
-      credentials: 'same-origin',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     }).catch(() => { /* ignore */ });
     setAccessToken(null);
     setUser(null);

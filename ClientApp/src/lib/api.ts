@@ -31,14 +31,13 @@ export async function tryRefreshAccessToken(): Promise<string | null> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
-    // The server sets a pms_rt httpOnly cookie; the browser sends it automatically with
-    // credentials: 'same-origin'. No refresh token is ever read from or written to
-    // localStorage/the request body — the httpOnly cookie is the only place it lives on
-    // the client, so it isn't readable by JS (and therefore not stealable via XSS).
     try {
       const res = await fetch(`${getApiUrl()}/auth/refresh`, {
         method: 'POST',
-        credentials: 'same-origin',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
       if (!res.ok) { clearAuth(); return null; }
       const json = await res.json();

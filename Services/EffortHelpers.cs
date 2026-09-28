@@ -35,7 +35,27 @@ namespace TaskManagement.Services
             DateTime createdAt, string currentStatus, IReadOnlyList<TaskStatusHistory> statusRows, DateTime now)
         {
             var segments = new List<EffortTimelineSegmentDto>();
-            var segStatus = (statusRows.Count > 0 ? statusRows[0].FromStatus : currentStatus) ?? currentStatus ?? string.Empty;
+            
+            // Handle the case where there are no status history records
+            if (statusRows.Count == 0)
+            {
+                // Just one segment from creation to now with current status
+                var seconds = Overlap(createdAt, now);
+                if (seconds > 0)
+                {
+                    segments.Add(new EffortTimelineSegmentDto
+                    {
+                        Status = currentStatus ?? string.Empty,
+                        StartAt = createdAt,
+                        EndAt = now,
+                        Seconds = seconds,
+                        IsProductive = IsProductiveStatus(currentStatus ?? string.Empty)
+                    });
+                }
+                return segments;
+            }
+            
+            var segStatus = statusRows[0].FromStatus ?? string.Empty;
             var segStart = createdAt;
 
             void Close(DateTime end, string? nextStatus)
@@ -57,12 +77,31 @@ namespace TaskManagement.Services
                 segStatus = nextStatus ?? string.Empty;
             }
 
-            foreach (var row in statusRows)
-                Close(row.ChangedAt, row.ToStatus);
-
-            if (!string.Equals(currentStatus, "completed", StringComparison.OrdinalIgnoreCase))
-                Close(now, currentStatus);
-
+            // Process each status history record
+            for (int i = 0; i < statusRows.Count; i++)
+            {
+                var row = statusRows[i];
+                
+                // Determine the end time for this status period
+                DateTime endTime;
+                if (i < statusRows.Count - 1)
+                {
+                    // Not the last row - end time is the start time of the next row
+                    endTime = statusRows[i + 1].StartTimestamp;
+                }
+                else
+                {
+                    // Last row - end time is either EndTimestamp (if set) or now (if still active)
+                    endTime = row.EndTimestamp ?? now;
+                }
+                
+                Close(endTime, row.ToStatus);
+            }
+            
+            // If the task is not completed, we need to add a segment from the last status to now
+            // But this is already handled in the Close call above when we pass now as the end time for the last segment
+            // if the last status record doesn't have an EndTimestamp (meaning it's still active)
+            
             return segments;
         }
 

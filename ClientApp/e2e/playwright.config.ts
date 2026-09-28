@@ -16,7 +16,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: 'http://localhost:5178',
+    baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
     ignoreHTTPSErrors: true,
     launchOptions: {
@@ -32,7 +32,7 @@ export default defineConfig({
       use: {
         browserName: 'chromium',
         viewport: { width: 1280, height: 900 },
-        baseURL: 'http://localhost:5178',
+        baseURL: 'http://localhost:3001',
       },
       testMatch: '**/*.spec.ts',
     },

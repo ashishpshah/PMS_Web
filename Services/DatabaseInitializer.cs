@@ -147,8 +147,8 @@ namespace TaskManagement.Services
                 await context.SaveChangesAsync();
 
                 // ── 6. Leave and Holidays module defaults ───────────────────────
-                // Singleton Rules Settings row: 10:00-19:00, 30-60min break, 1st/3rd/5th
-                // Saturday off (holiday), 2nd/4th Saturday a full working day.
+                // Singleton Rules Settings row: 10:00-19:00, 30-60min break, 2nd/4th
+                // Saturday off (holiday), 1st/3rd/5th Saturday a full working day.
                 context.WorkweekRules.Add(new WorkweekRules());
                 context.LeaveTypes.AddRange(
                     new LeaveType { Name = "Casual Leave", IsActive = true },

@@ -454,6 +454,22 @@ namespace TaskManagement.Services
             _context.Tasks.Add(task);
             await _context.SaveChangesAsync();
 
+            // Create initial history record for "new" status
+            var createdAt = AppClock.Now;
+            _context.TaskStatusHistories.Add(new TaskStatusHistory
+            {
+                TaskId = task.Id,
+                FromStatus = string.Empty, // No previous status for initial creation
+                ToStatus = "new",
+                StartTimestamp = task.CreatedAt,
+                EndTimestamp = null,
+                SpentHours = null,
+                ActualHours = null, // No user-reported effort for initial status
+                Action = "Created",
+                ChangedById = creatorId,
+                Reason = null
+            });
+
             // Create checklist items supplied with the task.
             for (int i = 0; i < createTaskDto.ChecklistItems.Count; i++)
             {
@@ -545,21 +561,28 @@ namespace TaskManagement.Services
                 ("new",          "in-progress")  => "Start Work",
                 ("in-progress",  "paused")        => "Pause",
                 ("paused",       "in-progress")   => "Resume",
+                ("paused",       "blocked")       => "Block",
                 ("in-progress",  "blocked")       => "Block",
                 ("blocked",      "in-progress")   => "Unblock",
+                ("blocked",      "issues")        => "Return with Issues",
                 ("in-progress",  "under-review")  => "Submit for Review",
                 ("under-review", "completed")     => "Approve & Complete",
                 ("under-review", "issues")        => "QA Failed / Return Issues",
+                ("under-review", "in-progress")   => "Send Back from Review",
                 ("issues",       "in-progress")   => "Fix Issues",
+                ("issues",       "under-review")  => "Resubmit for Review",
                 ("in-progress",  "issues")        => "Report Issues",
                 ("in-progress",  "completed")     => "Mark Complete",
-                ("under-review", "in-progress")   => "Send Back from Review",
                 _                                 => $"{from} → {to}"
             };
 
         // Returns null when transition is allowed, error message otherwise.
         private string? ValidateStatusTransition(TaskEntity task, string from, string to, int userId, bool isAdmin, string? reason, decimal? actualHours, bool requireActualHours)
         {
+            // Prevent any transition TO "new" status (initial creation is handled separately in CreateTaskAsync)
+            if (to.Equals("new", StringComparison.OrdinalIgnoreCase))
+                return "Cannot transition to 'new' status. The 'new' status is only set during task creation.";
+
             if (!ValidStatuses.Contains(to))
                 return $"Invalid status '{to}'. Allowed: {string.Join(", ", ValidStatuses)}";
 
@@ -825,7 +848,7 @@ namespace TaskManagement.Services
                 var effortTaskIds = effortTasks.Select(t => t.Id).ToHashSet();
                 var statusByTask = (await _context.TaskStatusHistories
                         .Where(h => effortTaskIds.Contains(h.TaskId))
-                        .OrderBy(h => h.ChangedAt)
+                        .OrderBy(h => h.StartTimestamp)
                         .ToListAsync(ct))
                     .GroupBy(h => h.TaskId)
                     .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());
@@ -916,7 +939,7 @@ namespace TaskManagement.Services
             var lastActivityByTask = await _context.TaskStatusHistories
                 .Where(h => taskIds.Contains(h.TaskId))
                 .GroupBy(h => h.TaskId)
-                .Select(g => new { TaskId = g.Key, LastChangedAt = g.Max(h => h.ChangedAt) })
+                .Select(g => new { TaskId = g.Key, LastChangedAt = g.Max(h => h.StartTimestamp) })
                 .ToListAsync(ct);
             var lastActivityByTaskMap = lastActivityByTask.ToDictionary(x => x.TaskId, x => x.LastChangedAt);
 
@@ -1054,13 +1077,36 @@ namespace TaskManagement.Services
                 if (task.Status == "blocked")
                 {
                     var resumeStatus = task.StartedAt == null ? "new" : "in-progress";
+                    var fromStatus = task.Status;
+                    var now = AppClock.Now;
+                    
+                    // Close current active history record
+                    var activeHistory = await _context.TaskStatusHistories
+                        .Where(h => h.TaskId == taskId && h.EndTimestamp == null)
+                        .FirstOrDefaultAsync();
+                    
+                    if (activeHistory != null)
+                    {
+                        activeHistory.EndTimestamp = now;
+                        activeHistory.SpentHours = (decimal)(now - activeHistory.StartTimestamp).TotalHours;
+                    }
+                    
+                    task.Status = resumeStatus;
+                    
+                    // Create new history record for the resumed status
                     _context.TaskStatusHistories.Add(new TaskStatusHistory
                     {
-                        TaskId = taskId, FromStatus = task.Status, ToStatus = resumeStatus,
-                        ChangedById = changedById, Reason = $"Auto-resolved on reassign. Reason: {dto.ReasonTag}",
-                        ChangedAt = AppClock.Now
+                        TaskId = taskId,
+                        FromStatus = fromStatus,
+                        ToStatus = resumeStatus,
+                        StartTimestamp = now,
+                        EndTimestamp = null,
+                        SpentHours = null,
+                        ActualHours = null, // auto-resolve on reassign doesn't require ActualHours
+                        Action = "Auto-resolved on reassign",
+                        ChangedById = changedById,
+                        Reason = $"Auto-resolved on reassign. Reason: {dto.ReasonTag}"
                     });
-                    task.Status = resumeStatus;
                 }
 
                 _context.TaskAssignmentHistories.Add(new TaskAssignmentHistory
@@ -1115,10 +1161,23 @@ namespace TaskManagement.Services
                 return new ApiResponse<TaskDto> { Success = false, Message = "Only tasks in 'New' status can be started this way." };
 
             var fromStatus = task.Status;
-            task.StartedAt   = AppClock.Now;
+            var now = AppClock.Now;
+            
+            // Find and close the current active history record (should be "new")
+            var activeHistory = await _context.TaskStatusHistories
+                .Where(h => h.TaskId == taskId && h.EndTimestamp == null)
+                .FirstOrDefaultAsync();
+            
+            if (activeHistory != null)
+            {
+                activeHistory.EndTimestamp = now;
+                activeHistory.SpentHours = (decimal)(now - activeHistory.StartTimestamp).TotalHours;
+            }
+            
+            task.StartedAt   = now;
             task.StartedById = userId;
             task.Status      = "in-progress";
-            task.UpdatedAt   = AppClock.Now;
+            task.UpdatedAt   = now;
 
             var user = await _context.Users.FindAsync(userId);
 
@@ -1130,12 +1189,19 @@ namespace TaskManagement.Services
                     UserId = userId, UserName = user?.FullName ?? "Unknown",
                     Action = $"started task '{task.Title}'",
                     TargetType = "task", TargetId = taskId, TargetName = task.Title,
-                    Timestamp = AppClock.Now
+                    Timestamp = now
                 });
                 _context.TaskStatusHistories.Add(new TaskStatusHistory
                 {
-                    TaskId = taskId, FromStatus = fromStatus, ToStatus = "in-progress",
-                    Action = "Start Work", ChangedById = userId, ChangedAt = AppClock.Now
+                    TaskId = taskId, 
+                    FromStatus = fromStatus, 
+                    ToStatus = "in-progress",
+                    StartTimestamp = now,
+                    EndTimestamp = null,
+                    SpentHours = null,
+                    ActualHours = null, // "new" → "in-progress" doesn't require ActualHours per config
+                    Action = "Start Work", 
+                    ChangedById = userId
                 });
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
@@ -1299,18 +1365,41 @@ namespace TaskManagement.Services
                 });
             }
 
+            // New history tracking logic: close current active record, then create new one
+            var now = AppClock.Now;
+            
+            // Find the currently active history record (where EndTimestamp is null)
+            var activeHistory = await _context.TaskStatusHistories
+                .Where(h => h.TaskId == taskId && h.EndTimestamp == null)
+                .FirstOrDefaultAsync();
+            
+            if (activeHistory != null)
+            {
+                // Close the active record
+                activeHistory.EndTimestamp = now;
+                activeHistory.SpentHours = (decimal)(now - activeHistory.StartTimestamp).TotalHours;
+                // Note: Do not modify activeHistory.ActualHours - it remains as user-reported value
+            }
+            
             var actionName = DeriveActionName(from, to);
             _context.TaskStatusHistories.Add(new TaskStatusHistory
             {
                 TaskId = taskId,
                 FromStatus = from,
                 ToStatus = to,
+                StartTimestamp = now,
+                EndTimestamp = null,
+                SpentHours = null,
+                ActualHours = RequiresActualHours(from, to) ? dto.ActualHours : null,
                 Action = actionName,
                 ChangedById = userId,
-                Reason = dto.Reason,
-                ActualHours = RequiresActualHours(from, to) ? dto.ActualHours : null,
-                ChangedAt = AppClock.Now
+                Reason = dto.Reason
             });
+            
+            // Update the task status AFTER creating the history record (so FromStatus is correct)
+            task.Status = to;
+            task.UpdatedAt = now;
+            
             _context.Activities.Add(new Activity
             {
                 UserId = userId,
@@ -1319,7 +1408,7 @@ namespace TaskManagement.Services
                 TargetType = "task",
                 TargetId = taskId,
                 TargetName = task.Title,
-                Timestamp = AppClock.Now
+                Timestamp = now
             });
 
             await using var tx = await _context.Database.BeginTransactionAsync();
@@ -1435,7 +1524,7 @@ namespace TaskManagement.Services
             var history = await _context.TaskStatusHistories
                 .Where(h => h.TaskId == taskId)
                 .Include(h => h.ChangedBy)
-                .OrderByDescending(h => h.ChangedAt)
+                .OrderByDescending(h => h.StartTimestamp)
                 .ToListAsync(ct);
 
             var dtos = history.Select(h => new TaskStatusHistoryDto
@@ -1449,7 +1538,9 @@ namespace TaskManagement.Services
                 ChangedByName = h.ChangedBy?.FullName,
                 Reason = h.Reason,
                 ActualHours = h.ActualHours,
-                ChangedAt = h.ChangedAt
+                StartTimestamp = h.StartTimestamp,
+                EndTimestamp = h.EndTimestamp,
+                SpentHours = h.SpentHours
             }).ToList();
 
             return new ApiResponse<List<TaskStatusHistoryDto>> { Success = true, Data = dtos };
@@ -1469,7 +1560,7 @@ namespace TaskManagement.Services
 
             var statusRows = await _context.TaskStatusHistories
                 .Where(h => h.TaskId == taskId)
-                .OrderBy(h => h.ChangedAt)
+                .OrderBy(h => h.StartTimestamp)
                 .ToListAsync(ct);
 
             var assignRows = await _context.TaskAssignmentHistories
@@ -1504,15 +1595,15 @@ namespace TaskManagement.Services
             var winEnd = toUtc ?? now;
 
             // Pull only what we need for every task, in three bulk queries (no N+1).
-            // Filter tasks and histories by the window end to exclude future data and reduce memory.
+            // Filter tasks and histories by the window end to exclude future data and status rows by StartTimestamp < winEnd
             var tasks = await _context.Tasks
                 .Where(t => t.CreatedAt < winEnd)
                 .Select(t => new { t.Id, t.CreatedAt, t.Status, t.AssignedToId })
                 .ToListAsync(ct);
 
             var statusByTask = (await _context.TaskStatusHistories
-                    .Where(h => h.ChangedAt < winEnd)
-                    .OrderBy(h => h.ChangedAt)
+                    .Where(h => h.StartTimestamp < winEnd)
+                    .OrderBy(h => h.StartTimestamp)
                     .ToListAsync(ct))
                 .GroupBy(h => h.TaskId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<TaskStatusHistory>)g.ToList());
@@ -1658,34 +1749,87 @@ namespace TaskManagement.Services
         {
             // 1) Build status segments [StartAt, EndAt) tagged with the status held.
             var segments = new List<EffortTimelineSegmentDto>();
-            var initialStatus = statusRows.Count > 0 ? statusRows[0].FromStatus : currentStatus;
-            var segStart = createdAt;
-            var segStatus = initialStatus ?? currentStatus ?? string.Empty;
-
-            void Close(DateTime end, string nextStatus)
+            
+            // Handle the case where there are no status history records
+            if (statusRows.Count == 0)
             {
-                var endClamped = end < segStart ? segStart : end;        // clamp skew
-                var seconds = EffortHelpers.Overlap(segStart, endClamped);
+                // Just one segment from creation to now with current status
+                var seconds = EffortHelpers.Overlap(createdAt, now);
                 segments.Add(new EffortTimelineSegmentDto
                 {
-                    Status = segStatus,
-                    StartAt = segStart,
-                    EndAt = endClamped,
+                    Status = currentStatus ?? string.Empty,
+                    StartAt = createdAt,
+                    EndAt = now,
                     Seconds = seconds,
-                    IsProductive = IsProductiveStatus(segStatus)
+                    IsProductive = IsProductiveStatus(currentStatus ?? string.Empty)
                 });
-                segStart = endClamped;
-                segStatus = nextStatus ?? string.Empty;
             }
-
-            foreach (var row in statusRows)
-                Close(row.ChangedAt, row.ToStatus);
-
-            // Final segment: completed tasks accrue no running tail; otherwise runs to now.
-            if (string.Equals(currentStatus, "completed", StringComparison.OrdinalIgnoreCase))
-                Close(segStart, currentStatus ?? string.Empty);  // zero-length close
             else
-                Close(now, currentStatus ?? string.Empty);
+            {
+                // Process each status history record
+                var segStart = createdAt;
+                var segStatus = statusRows.Count > 0 ? statusRows[0].FromStatus : currentStatus ?? string.Empty;
+                
+                for (int i = 0; i < statusRows.Count; i++)
+                {
+                    var row = statusRows[i];
+                    
+                    // Determine the end time for this status period
+                    DateTime endTime;
+                    if (i < statusRows.Count - 1)
+                    {
+                        // Not the last row - end time is the start time of the next row
+                        endTime = statusRows[i + 1].StartTimestamp;
+                    }
+                    else
+                    {
+                        // Last row - end time is either EndTimestamp (if set) or now (if still active)
+                        endTime = row.EndTimestamp ?? now;
+                    }
+                    
+                    // Only add segment if there's actual duration
+                    var seconds = EffortHelpers.Overlap(segStart, endTime);
+                    if (seconds > 0)
+                    {
+                        segments.Add(new EffortTimelineSegmentDto
+                        {
+                            Status = segStatus,
+                            StartAt = segStart,
+                            EndAt = endTime,
+                            Seconds = seconds,
+                            IsProductive = IsProductiveStatus(segStatus)
+                        });
+                    }
+                    
+                    // Prepare for next iteration
+                    segStart = endTime;
+                    if (i < statusRows.Count - 1)
+                    {
+                        // Next segment's status is the ToStatus of current row
+                        segStatus = row.ToStatus;
+                    }
+                    // else: last iteration, we'll handle the final segment after the loop
+                }
+                
+                // Handle final segment from the last status record's end time to now
+                // (but only if the last status record doesn't already go to now)
+                var lastRow = statusRows[statusRows.Count - 1];
+                if (lastRow.EndTimestamp == null) // Still active
+                {
+                    var finalSeconds = EffortHelpers.Overlap(segStart, now);
+                    if (finalSeconds > 0)
+                    {
+                        segments.Add(new EffortTimelineSegmentDto
+                        {
+                            Status = lastRow.ToStatus,
+                            StartAt = segStart,
+                            EndAt = now,
+                            Seconds = finalSeconds,
+                            IsProductive = IsProductiveStatus(lastRow.ToStatus)
+                        });
+                    }
+                }
+            }
 
             // Drop any zero-length trailing/duplicate segments for a clean timeline,
             // but keep them out of the displayed list only (totals already exclude 0s).
@@ -1753,7 +1897,7 @@ namespace TaskManagement.Services
                     && currentAssigneeId == uid && statusRows.Count > 0)
                 {
                     var lastCompleted = statusRows.LastOrDefault(r => string.Equals(r.ToStatus, "completed", StringComparison.OrdinalIgnoreCase));
-                    completedAt = lastCompleted?.ChangedAt;
+                    completedAt = lastCompleted?.StartTimestamp; // Use StartTimestamp instead of ChangedAt
                 }
 
                 byUser.Add(new UserEffortDto
@@ -2185,8 +2329,37 @@ namespace TaskManagement.Services
                         });
                     }
 
+                    var fromStatus = task.Status;
+                    var now = AppClock.Now;
+                    
+                    // Close current active history record if exists
+                    var activeHistory = await _context.TaskStatusHistories
+                        .Where(h => h.TaskId == taskId && h.EndTimestamp == null)
+                        .FirstOrDefaultAsync();
+                    
+                    if (activeHistory != null)
+                    {
+                        activeHistory.EndTimestamp = now;
+                        activeHistory.SpentHours = (decimal)(now - activeHistory.StartTimestamp).TotalHours;
+                    }
+                    
                     if (task.Status != "blocked") task.Status = "blocked";
-                    task.UpdatedAt = AppClock.Now;
+                    task.UpdatedAt = now;
+
+                    // Create new history record for blocked status
+                    _context.TaskStatusHistories.Add(new TaskStatusHistory
+                    {
+                        TaskId = taskId,
+                        FromStatus = fromStatus,
+                        ToStatus = "blocked",
+                        StartTimestamp = now,
+                        EndTimestamp = null,
+                        SpentHours = null,
+                        ActualHours = null, // blocking doesn't require ActualHours per config
+                        Action = "Block",
+                        ChangedById = requesterId,
+                        Reason = dto.Reason
+                    });
 
                     _context.Activities.Add(new Activity
                     {
@@ -2196,7 +2369,7 @@ namespace TaskManagement.Services
                         TargetType = "task",
                         TargetId = taskId,
                         TargetName = task.Title,
-                        Timestamp = AppClock.Now
+                        Timestamp = now
                     });
                 }
                 else
@@ -2219,12 +2392,41 @@ namespace TaskManagement.Services
                     // Leaving the Blocked column → resume work
                     if (task.Status == "blocked")
                     {
+                        var fromStatus = task.Status;
+                        var now = AppClock.Now;
+                        
+                        // Close current active history record
+                        var activeHistory = await _context.TaskStatusHistories
+                            .Where(h => h.TaskId == taskId && h.EndTimestamp == null)
+                            .FirstOrDefaultAsync();
+                        
+                        if (activeHistory != null)
+                        {
+                            activeHistory.EndTimestamp = now;
+                            activeHistory.SpentHours = (decimal)(now - activeHistory.StartTimestamp).TotalHours;
+                        }
+                        
                         task.Status = "in-progress";
                         if (task.StartedAt == null)
                         {
-                            task.StartedAt = AppClock.Now;
+                            task.StartedAt = now;
                             task.StartedById = requesterId;
                         }
+                        
+                        // Create new history record for in-progress status
+                        _context.TaskStatusHistories.Add(new TaskStatusHistory
+                        {
+                            TaskId = taskId,
+                            FromStatus = fromStatus,
+                            ToStatus = "in-progress",
+                            StartTimestamp = now,
+                            EndTimestamp = null,
+                            SpentHours = null,
+                            ActualHours = null, // unblocking doesn't require ActualHours per config
+                            Action = "Unblock",
+                            ChangedById = requesterId,
+                            Reason = "Unblocked"
+                        });
                     }
                     task.UpdatedAt = AppClock.Now;
 
@@ -2596,15 +2798,34 @@ namespace TaskManagement.Services
 
             // Move to 'issues' status — developer sees this as a failed QA pass.
             var from = task.Status;
+            var now = AppClock.Now;
+            
+            // Find and close the current active history record
+            var activeHistory = await _context.TaskStatusHistories
+                .Where(h => h.TaskId == taskId && h.EndTimestamp == null)
+                .FirstOrDefaultAsync();
+            
+            if (activeHistory != null)
+            {
+                activeHistory.EndTimestamp = now;
+                activeHistory.SpentHours = (decimal)(now - activeHistory.StartTimestamp).TotalHours;
+            }
+            
             task.Status = "issues";
-            task.UpdatedAt = AppClock.Now;
+            task.UpdatedAt = now;
 
             _context.TaskStatusHistories.Add(new TaskStatusHistory
             {
-                TaskId = taskId, FromStatus = from, ToStatus = "issues",
+                TaskId = taskId,
+                FromStatus = from,
+                ToStatus = "issues",
+                StartTimestamp = now,
+                EndTimestamp = null,
+                SpentHours = null,
+                ActualHours = null, // "under-review" → "issues" doesn't require ActualHours per config
                 Action = "QA Failed / Return Issues",
-                ChangedById = userId, Reason = reason ?? "QA rejected",
-                ChangedAt = AppClock.Now
+                ChangedById = userId,
+                Reason = reason ?? "QA rejected"
             });
 
             // Record the rejection as an issue entry for traceability.
@@ -2613,7 +2834,7 @@ namespace TaskManagement.Services
                 TaskId = taskId,
                 Description = $"QA rejected: {(string.IsNullOrWhiteSpace(reason) ? "Please fix and re-submit." : reason.Trim())}",
                 CreatedById = userId,
-                CreatedAt = AppClock.Now
+                CreatedAt = now
             });
 
             var actor = await _context.Users.FindAsync(userId);
@@ -2625,7 +2846,7 @@ namespace TaskManagement.Services
                 TargetType = "task",
                 TargetId = taskId,
                 TargetName = task.Title,
-                Timestamp = AppClock.Now
+                Timestamp = now
             });
 
             await using var tx = await _context.Database.BeginTransactionAsync();
@@ -2770,9 +2991,21 @@ namespace TaskManagement.Services
 
             var from = task.Status;
             var to = openCount > 0 ? "issues" : "completed";
-
+            var now = AppClock.Now;
+            
+            // Find and close the current active history record
+            var activeHistory = await _context.TaskStatusHistories
+                .Where(h => h.TaskId == taskId && h.EndTimestamp == null)
+                .FirstOrDefaultAsync();
+            
+            if (activeHistory != null)
+            {
+                activeHistory.EndTimestamp = now;
+                activeHistory.SpentHours = (decimal)(now - activeHistory.StartTimestamp).TotalHours;
+            }
+            
             task.Status = to;
-            task.UpdatedAt = AppClock.Now;
+            task.UpdatedAt = now;
 
             // When review fails: reassign back to original developer
             if (openCount > 0)
@@ -2791,7 +3024,7 @@ namespace TaskManagement.Services
                         NewAssigneeId      = reviewerAssignment.PreviousAssigneeId.Value,
                         ReasonTag          = "Management Decision",
                         ChangedById        = userId,
-                        ChangedAt          = AppClock.Now
+                        ChangedAt          = now
                     });
                     task.AssignedToId = reviewerAssignment.PreviousAssigneeId.Value;
                 }
@@ -2800,9 +3033,16 @@ namespace TaskManagement.Services
             var reviewAction = openCount > 0 ? "QA Failed / Return Issues" : "Approve & Complete";
             _context.TaskStatusHistories.Add(new TaskStatusHistory
             {
-                TaskId = taskId, FromStatus = from, ToStatus = to,
+                TaskId = taskId,
+                FromStatus = from,
+                ToStatus = to,
+                StartTimestamp = now,
+                EndTimestamp = null,
+                SpentHours = null,
+                ActualHours = null, // "under-review" → "completed"/"issues" doesn't require ActualHours per config
                 Action = reviewAction,
-                ChangedById = userId, Reason = reason, ChangedAt = AppClock.Now
+                ChangedById = userId,
+                Reason = reason
             });
 
             var actor = await _context.Users.FindAsync(userId);
@@ -2816,7 +3056,7 @@ namespace TaskManagement.Services
                 TargetType = "task",
                 TargetId = taskId,
                 TargetName = task.Title,
-                Timestamp = AppClock.Now
+                Timestamp = now
             });
 
             await using var tx = await _context.Database.BeginTransactionAsync();

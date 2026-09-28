@@ -231,36 +231,92 @@ function TaskCompletionModal({ task, onClose }: TaskCompletionModalProps) {
             {/* ── Tab 1: Status History ── */}
             {tab === 'history' && (
               histLoading ? (
-                <div className="space-y-2 animate-pulse">{[...Array(4)].map((_, i) => <div key={i} className="h-12 bg-gray-100 dark:bg-gray-800 rounded-xl" />)}</div>
+                <div className="space-y-3 animate-pulse">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-16 bg-gray-100 dark:bg-gray-800 rounded-xl" />
+                  ))}
+                </div>
               ) : history.length === 0 ? (
-                <p className="text-center text-[11px] text-gray-400 italic py-8">No status changes recorded yet.</p>
+                <div className="text-center py-12">
+                  <p className="text-sm text-gray-400 italic">No status changes recorded yet.</p>
+                </div>
               ) : (
-                <div className="relative pl-5 space-y-0">
-                  <div className="absolute left-[9px] top-2 bottom-2 w-0.5 bg-gray-100 dark:bg-gray-800" />
+                <div className="relative">
+                  {/* Timeline line */}
+                  <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gray-100 dark:bg-gray-800" />
                   {history.map((h, i) => (
-                    <div key={h.id} className="relative flex gap-3 pb-3 last:pb-0">
-                      {/* Dot */}
-                      <span className={`absolute -left-5 top-1.5 h-3 w-3 rounded-full border-2 border-white dark:border-gray-900 shrink-0 ${STATUS_DOT[h.toStatus] ?? 'bg-gray-400'}`} />
-                      <div className="flex-1 min-w-0 p-2.5 rounded-xl bg-gray-50/80 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800">
-                        {/* Status transition */}
-                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest text-white ${STATUS_DOT[h.fromStatus] ?? 'bg-gray-400'}`}>
-                            {STATUS_LABELS[h.fromStatus] ?? h.fromStatus}
-                          </span>
-                          <ChevronRight size={10} className="text-gray-400 shrink-0" />
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest text-white ${STATUS_DOT[h.toStatus] ?? 'bg-gray-400'}`}>
-                            {STATUS_LABELS[h.toStatus] ?? h.toStatus}
-                          </span>
-                          {i === 0 && <span className="ml-auto text-[8px] font-black uppercase tracking-widest text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">Latest</span>}
+                    <div
+                      key={h.id}
+                      className={`relative pl-14 pb-6 last:pb-0 transition-all duration-200 ${
+                        i === 0 ? 'bg-indigo-50/50 dark:bg-indigo-900/10 rounded-xl' : 'hover:bg-gray-50/50 dark:hover:bg-gray-800/50 rounded-xl'
+                      }`}
+                    >
+                      {/* Timeline dot & connector */}
+                      <div className="absolute left-0 top-1 flex items-start">
+                        <div
+                          className={`relative z-10 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-gray-900 shrink-0 ${
+                            i === 0 ? 'ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-gray-900' : ''
+                          } ${STATUS_DOT[h.toStatus] ?? 'bg-gray-400'}`}
+                        />
+                        {i < history.length - 1 && (
+                          <div className="absolute left-[5px] top-6 bottom-0 w-0.5 bg-gray-100 dark:bg-gray-800" />
+                        )}
+                      </div>
+
+                      {/* Card content */}
+                      <div className="p-4 min-h-[72px]">
+                        <div className="flex items-start justify-between gap-3">
+                          {/* Status transition */}
+                          <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-white shrink-0 ${
+                                STATUS_DOT[h.fromStatus] ?? 'bg-gray-400'
+                              }`}
+                            >
+                              {STATUS_LABELS[h.fromStatus] ?? h.fromStatus}
+                            </span>
+                            <ChevronRight
+                              size={14}
+                              className="text-gray-400 shrink-0 flex-shrink-0"
+                              strokeWidth={2.5}
+                            />
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wider text-white shrink-0 ${
+                                i === 0 ? 'ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-gray-900' : ''
+                              } ${STATUS_DOT[h.toStatus] ?? 'bg-gray-400'}`}
+                            >
+                              {STATUS_LABELS[h.toStatus] ?? h.toStatus}
+                            </span>
+                            {i === 0 && (
+                              <span className="ml-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
+                                Latest
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        {/* Meta row */}
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9px] text-gray-400 font-mono">
-                          <span className="font-semibold text-gray-600 dark:text-gray-300">{h.changedByName}</span>
-                          <span>{formatDateTime(h.changedAt)}</span>
+
+                        {/* Meta row - single line with user, timestamp, duration, reason */}
+                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-gray-500 dark:text-gray-400">
+                          <div className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300">
+                            <span className="font-medium">{h.changedByName}</span>
+                            <span className="text-gray-300 dark:text-gray-600">•</span>
+                            <time className="font-mono whitespace-nowrap">{formatDateTime(h.changedAt)}</time>
+                          </div>
+
+                          {/* Single duration value - actualHours if available */}
                           {h.actualHours != null && h.actualHours > 0 && (
-                            <span className="text-indigo-500 font-black">⏱ {toHHMM(h.actualHours)}</span>
+                            <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-mono font-medium">
+                              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                              <span>Spent: {toHHMM(h.actualHours)}</span>
+                            </div>
                           )}
-                          {h.reason && <span className="italic text-gray-400">"{h.reason}"</span>}
+
+                          {h.reason && (
+                            <div className="flex-1 min-w-[150px] flex items-center gap-1.5 text-gray-400 dark:text-gray-500">
+                              <span className="text-gray-300 dark:text-gray-600">•</span>
+                              <span className="italic truncate">"{h.reason}"</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2515,7 +2571,7 @@ export default function Tasks() {
                               }} />
 
                             {/* Block */}
-                            <div className="space-y-1.5 pt-1 border-t border-gray-100 dark:border-gray-800">
+                            {/* <div className="space-y-1.5 pt-1 border-t border-gray-100 dark:border-gray-800">
                               <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
                                 <ShieldAlert size={10} className="text-red-400" /> Block Status
                               </p>
@@ -2523,6 +2579,7 @@ export default function Tasks() {
                                 blockChecklistItems={live.blockChecklistItems}
                                 currentUserId={currentUser?.id ?? 0} isAssignee={isAssignee} isAdmin={isAdmin}
                                 canUnblock={isManager || canEditTask(editingTask)}
+                                showBlockControls={false}
                                 onBlock={async (items, hours, reason) => {
                                   try {
                                     // Route through the same state-machine-validated endpoint as Kanban
@@ -2555,7 +2612,7 @@ export default function Tasks() {
                                 onResolveItem={async (itemId, comment) => { await taskService.resolveBlockItem(live.id, itemId, comment); refreshTasks(); }}
                                 onRemoveItem={async (itemId) => { await taskService.removeBlockItem(live.id, itemId); refreshTasks(); }}
                                 onItemUpdated={refreshTasks} />
-                            </div>
+                            </div> */}
 
                             {/* Status History */}
                             <div className="space-y-2 pt-1 border-t border-gray-100 dark:border-gray-800">

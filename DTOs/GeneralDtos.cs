@@ -184,7 +184,13 @@ namespace TaskManagement.DTOs
         public string? ChangedByName { get; set; }
         public string? Reason { get; set; }
         public decimal? ActualHours { get; set; }
-        public DateTime ChangedAt { get; set; }
+        
+        // Timestamp when this status entry began
+        public DateTime StartTimestamp { get; set; }
+        // Timestamp when this status entry ended (null = currently active)
+        public DateTime? EndTimestamp { get; set; }
+        // System-calculated elapsed time in this status (EndTimestamp - StartTimestamp)
+        public decimal? SpentHours { get; set; }
     }
 
     // ── Effort time tracking (derived from status + assignment history) ──────────
@@ -772,18 +778,18 @@ namespace TaskManagement.DTOs
         public int UserId { get; set; }
         public string UserName { get; set; } = string.Empty;
         public string? AvatarUrl { get; set; }
-        public long ProductiveSeconds { get; set; }
-        public long PausedSeconds { get; set; }
-        public long BlockedSeconds { get; set; }
-        public long UnderReviewSeconds { get; set; }
-        public long TotalSeconds { get; set; }
-        public int TaskCount { get; set; }
-        // Sum of EstimatedHours across the user's distinct tasks in scope.
-        public decimal EstimatedHours { get; set; }
-        // Sum of ActualHours the user logged (TaskStatusHistory.ActualHours) across
-        // their status transitions in scope — i.e. self-reported "hours spent",
-        // distinct from ProductiveSeconds/TotalSeconds which are auto-reconstructed
-        // from status-history timing rather than user-entered.
+        
+        // Task counts by status (primary metrics)
+        public int TotalTasks { get; set; }
+        public int NewTasks { get; set; }
+        public int InProgressTasks { get; set; }
+        public int PausedTasks { get; set; }
+        public int BlockedTasks { get; set; }
+        public int UnderReviewTasks { get; set; }
+        public int IssuesTasks { get; set; }
+        public int CompletedTasks { get; set; }
+        
+        // Working Hours = user-reported ActualHours (only time metric)
         public decimal WorkingHoursSpent { get; set; }
     }
 
@@ -795,23 +801,21 @@ namespace TaskManagement.DTOs
         public string TaskStatus { get; set; } = string.Empty;
         public int ProjectId { get; set; }
         public string ProjectName { get; set; } = string.Empty;
-        public long ProductiveSeconds { get; set; }
-        public long PausedSeconds { get; set; }
-        public long BlockedSeconds { get; set; }
-        public long UnderReviewSeconds { get; set; }
-        public long TotalSeconds { get; set; }
+        public int AssignedUserId { get; set; }
+        public string AssignedUserName { get; set; } = string.Empty;
+        // Task-level estimated hours (from Task.EstimatedHours)
+        public decimal EstimatedHours { get; set; }
+        // Working Hours = sum of ActualHours logged on this task's status transitions
+        public decimal WorkingHoursSpent { get; set; }
     }
 
     public class HoursSummaryProjectRowDto
     {
         public int ProjectId { get; set; }
         public string ProjectName { get; set; } = string.Empty;
-        public long ProductiveSeconds { get; set; }
-        public long PausedSeconds { get; set; }
-        public long BlockedSeconds { get; set; }
-        public long UnderReviewSeconds { get; set; }
-        public long TotalSeconds { get; set; }
-        public int TaskCount { get; set; }
+        public int TotalTasks { get; set; }
+        public decimal TotalEstimatedHours { get; set; }
+        public decimal TotalWorkingHoursSpent { get; set; }
         public int UserCount { get; set; }
     }
 
@@ -882,7 +886,7 @@ namespace TaskManagement.DTOs
         public string WorkEndTime { get; set; } = "19:00";
         public int BreakMinMinutes { get; set; } = 30;
         public int BreakMaxMinutes { get; set; } = 60;
-        public List<int> HolidaySaturdayOccurrences { get; set; } = new() { 1, 3, 5 };
+        public List<int> HolidaySaturdayOccurrences { get; set; } = new() { 2, 4 };
         public DateTime? UpdatedAt { get; set; }
     }
 

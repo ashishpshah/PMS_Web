@@ -324,6 +324,9 @@ export interface TaskStatusHistory {
   reason?: string;
   actualHours?: number;
   changedAt: string;
+  startTimestamp?: string;
+  endTimestamp?: string;
+  spentHours?: number;
 }
 
 // ── Effort time tracking (derived from status + assignment history) ──────────
@@ -599,17 +602,18 @@ export interface HoursSummaryUserRow {
   userId: number;
   userName: string;
   avatarUrl?: string;
-  productiveSeconds: number;
-  pausedSeconds: number;
-  blockedSeconds: number;
-  underReviewSeconds: number;
-  totalSeconds: number;
-  taskCount: number;
-  // Sum of EstimatedHours across the user's distinct tasks in scope.
-  estimatedHours: number;
-  // Sum of self-reported ActualHours the user logged across their status
-  // transitions in scope ("hours spent") — distinct from the auto-tracked
-  // productiveSeconds/totalSeconds above.
+  
+  // Task counts by status (primary metrics)
+  totalTasks: number;
+  newTasks: number;
+  inProgressTasks: number;
+  pausedTasks: number;
+  blockedTasks: number;
+  underReviewTasks: number;
+  issuesTasks: number;
+  completedTasks: number;
+  
+  // Working Hours = user-reported ActualHours (only time metric)
   workingHoursSpent: number;
 }
 
@@ -620,22 +624,20 @@ export interface HoursSummaryTaskRow {
   taskStatus: Status;
   projectId: number;
   projectName: string;
-  productiveSeconds: number;
-  pausedSeconds: number;
-  blockedSeconds: number;
-  underReviewSeconds: number;
-  totalSeconds: number;
+  assignedUserId: number;
+  assignedUserName: string;
+  // Task-level estimated hours
+  estimatedHours: number;
+  // Working Hours = sum of ActualHours logged on this task's status transitions
+  workingHoursSpent: number;
 }
 
 export interface HoursSummaryProjectRow {
   projectId: number;
   projectName: string;
-  productiveSeconds: number;
-  pausedSeconds: number;
-  blockedSeconds: number;
-  underReviewSeconds: number;
-  totalSeconds: number;
-  taskCount: number;
+  totalTasks: number;
+  totalEstimatedHours: number;
+  totalWorkingHoursSpent: number;
   userCount: number;
 }
 

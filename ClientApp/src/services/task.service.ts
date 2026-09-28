@@ -187,6 +187,9 @@ interface ApiStatusHistoryDto {
   reason?: string;
   actualHours?: number;
   changedAt: string;
+  startTimestamp?: string;
+  endTimestamp?: string;
+  spentHours?: number;
 }
 
 interface ApiTaskEffortDto {
@@ -568,6 +571,9 @@ export const taskService = {
       reason: h.reason,
       actualHours: h.actualHours,
       changedAt: h.changedAt,
+      startTimestamp: h.startTimestamp,
+      endTimestamp: h.endTimestamp,
+      spentHours: h.spentHours,
     }));
   },
 
