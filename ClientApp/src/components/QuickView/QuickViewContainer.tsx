@@ -565,7 +565,6 @@ export function QuickViewContainer() {
               isQa={isQa}
               checklistComplete={checklistDone}
               isAdmin={isAdmin}
-              activeBlockItemCount={(task.blockChecklistItems ?? []).filter(i => i.status === 'active').length}
               onChange={async (to, reason, actualHours, blockItems) => {
                 try {
                   await changeTaskStatus(task.id, to, reason, actualHours, blockItems);

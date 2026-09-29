@@ -1,10 +1,10 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using TaskManagement.DTOs;
 using TaskManagement.Services;
 using TaskManagement.Data;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -257,7 +257,19 @@ namespace TaskManagement.Controllers
             var userId = _authService.GetCurrentUserId();
             if (userId <= 0)
                 return Unauthorized(new ApiResponse<TaskDto> { Success = false, Message = "Unable to determine current user" });
-            var result = await _taskService.ChangeStatusAsync(id, dto, userId, await _authService.IsAdminAsync());
+
+            // Get current task to determine from status
+            var task = await _context.Tasks.FindAsync(id);
+            if (task == null)
+                return NotFound(new ApiResponse<TaskDto> { Success = false, Message = "Task not found" });
+
+            var fromStatus = task.Status;
+            var toStatus = dto.ToStatus?.Trim() ?? "";
+            
+            // Check if transition requires actual hours
+            var requireActualHours = await _taskService.RequiresActualHoursForTransitionAsync(fromStatus, toStatus);
+            
+            var result = await _taskService.ChangeStatusAsync(id, dto, userId, await _authService.IsAdminAsync(), requireActualHours);
             if (!result.Success)
                 return result.ErrorCode == "FORBIDDEN" ? StatusCode(403, result) : BadRequest(result);
             return Ok(result);

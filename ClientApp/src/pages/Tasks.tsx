@@ -11,7 +11,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { Task, Status, Priority, Attachment, STATUS_LABELS, STATUS_BADGE_VARIANT, TASK_STATUSES, ReasonTag, REASON_TAGS, BLOCK_REASON_TAGS, AddBlockItem, BLOCK_CATEGORIES } from '../types';
+import { Task, Status, Priority, Attachment, STATUS_LABELS, STATUS_BADGE_VARIANT, TASK_STATUSES, ReasonTag, REASON_TAGS, BLOCK_REASON_TAGS, AddBlockItem, BLOCK_CATEGORIES, BlockChecklistItem } from '../types';
 import { cn, formatDateTime, toInputDate, toHHMM, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, requiresActualHours } from '../lib/utils';
 import { TaskAttachmentsPanel } from '../components/ui/TaskAttachmentsPanel';
 import { DateInput } from '../components/ui/DateInput';
@@ -606,7 +606,8 @@ export default function Tasks() {
       // No deep-link at all — default the List/Kanban view to "assigned to me",
       // once, on first load only. Doesn't re-force it if the user later clears
       // the assignee filter themselves to see all tasks.
-      if (!appliedInitialScopeRef.current && currentUser) {
+      // Only default to "assigned to me" if the current user exists in the assignee list.
+      if (!appliedInitialScopeRef.current && currentUser && users.some(u => u.id === currentUser.id)) {
         setSelectedUserIds([currentUser.id]);
         appliedInitialScopeRef.current = true;
       }
@@ -614,8 +615,8 @@ export default function Tasks() {
     }
     appliedInitialScopeRef.current = true;
 
-    if (mine === '1' && currentUser) setSelectedUserIds([currentUser.id]);
-    if (userId) { const n = Number(userId); if (!Number.isNaN(n)) setSelectedUserIds([n]); }
+    if (mine === '1' && currentUser && users.some(u => u.id === currentUser.id)) setSelectedUserIds([currentUser.id]);
+    if (userId) { const n = Number(userId); if (!Number.isNaN(n) && users.some(u => u.id === n)) setSelectedUserIds([n]); }
     if (createdByMe === '1') setShowCreatedByMe(true);
     if (blocked === '1') setShowBlockedOnly(true);
 
@@ -624,7 +625,7 @@ export default function Tasks() {
     ['mine', 'createdByMe', 'due', 'blocked', 'userId'].forEach(k => next.delete(k));
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, currentUser]);
+  }, [searchParams, currentUser, users]);
 
   // ── server-side task fetch ────────────────────────────────────────────────
   // Fires on mount, server-filterable filter changes, page changes, or after mutations.
@@ -690,8 +691,7 @@ export default function Tasks() {
       || (proj ? (currentUser?.id === proj.ownerId || currentUser?.id === proj.createdById) : false);
     const isQa = task.qaAssigneeId != null && currentUser?.id === task.qaAssigneeId;
     const checklistComplete = !task.checklistItems?.length || task.checklistItems.every(c => c.isCompleted);
-    const activeBlockItemCount = (task.blockChecklistItems ?? []).filter(i => i.status === 'active').length;
-    return { isAssignee, isManager, isQa, checklistComplete, activeBlockItemCount };
+    return { isAssignee, isManager, isQa, checklistComplete, blockChecklistItems: task.blockChecklistItems };
   };
 
   // onChange handler for <TaskStatusActions> used in the List/Kanban status popovers —
@@ -2554,14 +2554,26 @@ export default function Tasks() {
                           || (proj ? (currentUser?.id === proj.ownerId || currentUser?.id === proj.createdById) : false);
                         const isQa = live.qaAssigneeId != null && currentUser?.id === live.qaAssigneeId;
                         const checklistDone = !live.checklistItems?.length || live.checklistItems.every(c => c.isCompleted);
-                        return (
-                          <div className={cn(editTab !== 'status' && 'hidden', 'space-y-5')}>
-                            <TaskStatusActions
-                              currentStatus={live.status} isManager={isManager} isAssignee={isAssignee}
-                              isQa={isQa} checklistComplete={checklistDone}
-                              isAdmin={isAdmin}
-                              activeBlockItemCount={(live.blockChecklistItems ?? []).filter(i => i.status === 'active').length}
-                              onChange={async (to, reason, actualHours, blockItems) => {
+return (
+                            <div className={cn(editTab !== 'status' && 'hidden', 'space-y-5')}>
+                              <TaskStatusActions
+                                currentStatus={live.status} isManager={isManager} isAssignee={isAssignee}
+                                isQa={isQa} checklistComplete={checklistDone}
+                                isAdmin={isAdmin}
+                                blockChecklistItems={live.blockChecklistItems}
+                                onResolveItem={async (itemId, comment) => { await taskService.resolveBlockItem(live.id, itemId, comment); refreshTasks(); }}
+                                onUnblock={async (hours) => {
+                                  try {
+                                    await changeTaskStatus(live.id, 'in-progress', undefined, hours);
+                                    await addActivity({ userId: currentUser?.id || 1, userName: currentUser?.name || 'Admin', action: 'unblocked', targetType: 'task', targetId: live.id, targetName: live.title });
+                                    refreshTasks();
+                                    showSuccess('Task unblocked');
+                                  } catch (err) {
+                                    showError(err instanceof Error ? err.message : 'Failed to unblock task');
+                                    throw err;
+                                  }
+                                }}
+                                onChange={async (to, reason, actualHours, blockItems) => {
                                 try {
                                   await changeTaskStatus(live.id, to, reason, actualHours, blockItems);
                                   refreshTasks();
@@ -3271,7 +3283,7 @@ function HoursPromptModal({ taskTitle, statusLabel, onConfirm, onClose }: {
 function TaskStatusMenuModal({ task, isAdmin, statusProps, onChange, onClose }: {
   task: Task;
   isAdmin: boolean;
-  statusProps: { isAssignee: boolean; isManager: boolean; isQa: boolean; checklistComplete: boolean; activeBlockItemCount: number };
+  statusProps: { isAssignee: boolean; isManager: boolean; isQa: boolean; checklistComplete: boolean; blockChecklistItems?: BlockChecklistItem[] };
   onChange: (to: Status, reason?: string, actualHours?: number, blockItems?: AddBlockItem[]) => Promise<void> | void;
   onClose: () => void;
 }) {
@@ -3294,6 +3306,7 @@ function TaskStatusMenuModal({ task, isAdmin, statusProps, onChange, onClose }: 
             currentStatus={task.status}
             isAdmin={isAdmin}
             {...statusProps}
+            blockChecklistItems={statusProps.blockChecklistItems}
             onChange={onChange} />
         </CardContent>
       </Card>

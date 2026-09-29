@@ -28,6 +28,7 @@ namespace TaskManagement.Services
         Task<ApiResponse<TaskDto>> ReassignTaskAsync(int taskId, ReassignTaskDto dto, int changedById);
         Task<ApiResponse<TaskDto>> StartTaskAsync(int taskId, int userId);
         Task<ApiResponse<TaskDto>> ChangeStatusAsync(int taskId, ChangeStatusDto dto, int userId, bool isAdmin, bool requireActualHours = true);
+        Task<bool> RequiresActualHoursForTransitionAsync(string from, string to);
         Task<ApiResponse<List<TaskStatusHistoryDto>>> GetStatusHistoryAsync(int taskId, CancellationToken ct = default);
         Task<ApiResponse<TaskEffortDto>> GetTaskEffortAsync(int taskId, CancellationToken ct = default);
         Task<ApiResponse<DashboardEffortDto>> GetEffortStatsAsync(DateTime? fromUtc, DateTime? toUtc, int? filterUserId = null, CancellationToken ct = default);
@@ -409,6 +410,18 @@ namespace TaskManagement.Services
                 result[from] = toMap;
             }
             return result;
+        }
+
+        public bool RequiresActualHoursForTransition(string from, string to)
+        {
+            if (_transitions.Edges.TryGetValue(from, out var edges) && edges.TryGetValue(to, out var edge))
+                return edge;
+            return false;
+        }
+
+        public Task<bool> RequiresActualHoursForTransitionAsync(string from, string to)
+        {
+            return Task.FromResult(RequiresActualHoursForTransition(from, to));
         }
 
         public async Task<ApiResponse<TaskDto>> CreateTaskAsync(CreateTaskDto createTaskDto, int creatorId)

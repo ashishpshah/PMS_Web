@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { Plus, Trash2, ShieldAlert, ChevronDown, X, AlertCircle, Info } from 'lucide-react';
-import { Status, STATUS_LABELS, AddBlockItem, BLOCK_CATEGORIES, StatusTransitionGraph } from '../../types';
+import { useState, useMemo, useEffect } from 'react';
+import { Plus, Trash2, ShieldAlert, ShieldCheck, ChevronDown, X, AlertCircle, Info } from 'lucide-react';
+import { Status, STATUS_LABELS, AddBlockItem, BLOCK_CATEGORIES, StatusTransitionGraph, BlockChecklistItem } from '../../types';
 import { TimeInput } from './TimeInput';
 import { fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry, getAllowedNextStatuses, requiresActualHours } from '../../lib/utils';
 import { VSelect } from '../forms/VSelect';
@@ -48,6 +48,86 @@ function getDisableReason(
 
 const emptyItem = (): AddBlockItem => ({ category: '', description: '' });
 
+// Unblock Modal Component
+function UnblockModal({
+  onClose,
+  onConfirm,
+  saving,
+  activeBlockItemCount,
+  blockChecklistItems,
+}: {
+  onClose: () => void;
+  onConfirm: () => void;
+  saving: boolean;
+  activeBlockItemCount: number;
+  blockChecklistItems?: BlockChecklistItem[];
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-emerald-500" />
+          Unblock Task
+        </h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          aria-label="Close"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        Confirm to unblock this task. All active block items must be resolved first.
+      </p>
+
+      {(activeBlockItemCount > 0) && (
+        <div className="p-3 bg-red-50/60 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 rounded-lg space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
+            {activeBlockItemCount} Active Block Item{activeBlockItemCount !== 1 ? 's' : ''} must be resolved first
+          </p>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+            {blockChecklistItems?.filter(i => i.status === 'active').map(item => (
+              <div key={item.id} className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
+                <span className="h-4 w-4 rounded-full bg-red-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-red-800 dark:text-red-200">
+                    {item.category}: {item.description}
+                  </span>
+                  {item.expectedResolution && (
+                    <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={saving || activeBlockItemCount > 0}
+          className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          <ShieldCheck size={16} />
+          {saving ? 'Unblocking...' : activeBlockItemCount > 0 ? 'Resolve items first' : 'Unblock Task'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface TaskStatusActionsProps {
   currentStatus: Status;
   isManager: boolean;
@@ -55,8 +135,10 @@ interface TaskStatusActionsProps {
   isQa: boolean;
   checklistComplete: boolean;
   isAdmin?: boolean;
-  activeBlockItemCount?: number;
+  blockChecklistItems?: BlockChecklistItem[];
   onChange: (to: Status, reason?: string, actualHours?: number, blockItems?: AddBlockItem[]) => Promise<void> | void;
+  onResolveItem?: (itemId: number, comment?: string) => Promise<void> | void;
+  onUnblock?: (hours?: number) => Promise<void> | void;
 }
 
 export function TaskStatusActions({
@@ -66,17 +148,32 @@ export function TaskStatusActions({
   isQa,
   checklistComplete,
   isAdmin,
-  activeBlockItemCount = 0,
+  blockChecklistItems = [],
   onChange,
+  onResolveItem,
+  onUnblock,
 }: TaskStatusActionsProps) {
   const [blockOpen, setBlockOpen] = useState(false);
+  const [unblockOpen, setUnblockOpen] = useState(false);
   const [blockItems, setBlockItems] = useState<AddBlockItem[]>([emptyItem()]);
   const [blockHoursInput, setBlockHoursInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [resolvingItemId, setResolvingItemId] = useState<number | null>(null);
 
   const [selectedNextStatus, setSelectedNextStatus] = useState<Status | null>(null);
   const [hoursInput, setHoursInput] = useState('');
   const [hoursError, setHoursError] = useState<string | null>(null);
+
+  // Local state for block checklist items to allow immediate UI updates
+  const [localBlockItems, setLocalBlockItems] = useState<BlockChecklistItem[]>(blockChecklistItems || []);
+
+  // Sync local state with props
+  useEffect(() => {
+    setLocalBlockItems(blockChecklistItems || []);
+  }, [blockChecklistItems]);
+
+  // Compute active block item count from local state
+  const activeBlockItemCount = localBlockItems?.filter(i => i.status === 'active').length ?? 0;
 
   const { statusTransitions } = useData();
 
@@ -293,6 +390,187 @@ export function TaskStatusActions({
     );
   }
 
+  // Confirm unblock handler
+  const confirmUnblock = async () => {
+    setSaving(true);
+    try {
+      // Pass undefined since blocked->in-progress doesn't require hours per config
+      await onUnblock?.(undefined);
+      showSuccess('Task unblocked successfully');
+      // Wait a bit to allow parent to refresh task data before closing modal
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setUnblockOpen(false);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to unblock task');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Unblock Modal
+  if (unblockOpen) {
+    return <UnblockModal onClose={() => setUnblockOpen(false)} onConfirm={confirmUnblock} saving={saving} activeBlockItemCount={activeBlockItemCount} blockChecklistItems={blockChecklistItems} />;
+  }
+
+  // Helper: Render block items list
+  const renderBlockItemsList = () => (
+    <div className="mt-3 space-y-2">
+      {localBlockItems && localBlockItems.length > 0 ? (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
+            {localBlockItems.filter(i => i.status === 'active').length} Active Block Item{localBlockItems.filter(i => i.status === 'active').length !== 1 ? 's' : ''}
+          </p>
+          <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+            {localBlockItems.map(item => (
+              <div key={item.id} className="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
+                <input
+                  type="checkbox"
+                  checked={item.status === 'resolved'}
+                  onChange={async (e) => {
+                    const checked = e.target.checked;
+                    setLocalBlockItems(prev => prev.map(i =>
+                      i.id === item.id ? { ...i, status: checked ? 'resolved' : 'active' } : i
+                    ));
+                    setResolvingItemId(item.id);
+                    try {
+                      await onResolveItem?.(item.id, checked ? 'Resolved via Status & Block tab' : undefined);
+                    } catch (err) {
+                      setLocalBlockItems(prev => prev.map(i =>
+                        i.id === item.id ? { ...i, status: checked ? 'active' : 'resolved' } : i
+                      ));
+                      throw err;
+                    } finally {
+                      setResolvingItemId(null);
+                    }
+                  }}
+                  disabled={saving || resolvingItemId !== null || !(isAdmin || isManager)}
+                  className="h-4 w-4 text-red-600 border-red-300 rounded focus:ring-red-500 focus:ring-2"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">{item.category}</span>
+                    <span className="ml-2">{item.description}</span>
+                  </div>
+                  {item.expectedResolution && (
+                    <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="text-sm text-gray-500 dark:text-gray-400">No block items added yet.</p>
+      )}
+    </div>
+  );
+
+  // Helper: Render unblock button for admin/manager
+  const renderUnblockButton = () => (
+    (isAdmin || isManager) && (
+      <button
+        type="button"
+        onClick={() => setUnblockOpen(true)}
+        disabled={saving || activeBlockItemCount > 0}
+        className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+      >
+        <ShieldCheck size={16} />
+        {activeBlockItemCount > 0 ? `Resolve ${activeBlockItemCount} item(s) first` : 'Unblock Task'}
+      </button>
+    )
+  );
+
+  // Helper: Render blocked state content
+  const renderBlockedState = () => (
+    <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800/50 rounded-lg">
+      <p className="text-sm font-medium text-red-800 dark:text-red-200">Task is currently blocked</p>
+      <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">Resolve active block items to unblock this task.</p>
+
+      {activeBlockItemCount > 0 && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
+            {activeBlockItemCount} Active Block Item{activeBlockItemCount !== 1 ? 's' : ''}
+          </p>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+            {localBlockItems?.filter(i => i.status === 'active').map(item => (
+              <div key={item.id} className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
+                <input
+                  type="checkbox"
+                  checked={item.status === 'resolved'}
+                  onChange={async (e) => {
+                    const checked = e.target.checked;
+                    setLocalBlockItems(prev => prev.map(i =>
+                      i.id === item.id ? { ...i, status: checked ? 'resolved' : 'active' } : i
+                    ));
+                    setResolvingItemId(item.id);
+                    try {
+                      await onResolveItem?.(item.id, checked ? 'Resolved via Status & Block tab' : undefined);
+                    } catch (err) {
+                      setLocalBlockItems(prev => prev.map(i =>
+                        i.id === item.id ? { ...i, status: checked ? 'active' : 'resolved' } : i
+                      ));
+                      throw err;
+                    } finally {
+                      setResolvingItemId(null);
+                    }
+                  }}
+                  disabled={saving || resolvingItemId !== null || !(isAdmin || isManager)}
+                  className="h-4 w-4 text-red-600 border-red-300 rounded focus:ring-red-500 focus:ring-2"
+                />
+                <div className="flex-1 min-w-0">
+                  <span className={`text-sm font-medium ${isAdmin || isManager ? 'text-red-800 dark:text-red-200' : 'text-red-600 dark:text-red-400 line-through'}`}>
+                    {item.category}: {item.description}
+                  </span>
+                  {item.expectedResolution && (
+                    <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {renderUnblockButton()}
+    </div>
+  );
+
+  // Helper: Render non-blocked state content
+  const renderNonBlockedState = () => (
+    <>
+      {renderBlockItemsList()}
+      {renderUnblockButton()}
+    </>
+  );
+
+  // Helper: Render the right column (Block Task section)
+  const renderBlockTaskSection = () => (
+    <div className="bg-red-50/50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/30 rounded-xl p-4 h-full">
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">Block Task</h3>
+          <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
+            Mark this task as blocked if there is an impediment preventing further progress.
+          </p>
+        </div>
+      </div>
+      {!isCurrentlyBlocked && (
+        <button
+          type="button"
+          onClick={() => setBlockOpen(true)}
+          disabled={saving || currentStatus === 'completed'}
+          className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          <ShieldAlert size={16} />
+          Block Task
+        </button>
+      )}
+      {isCurrentlyBlocked ? renderBlockedState() : renderNonBlockedState()}
+    </div>
+  );
   return (
     <div className="space-y-4">
       {/* Current Status (1/2) | Block Task (1/2) */}
@@ -318,37 +596,7 @@ export function TaskStatusActions({
         </div>
 
         {/* Block Task Section */}
-        <div className="bg-red-50/50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/30 rounded-xl p-4 h-full">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-              <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">Block Task</h3>
-              <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
-                Mark this task as blocked if there is an impediment preventing further progress.
-              </p>
-            </div>
-          </div>
-          {!isCurrentlyBlocked && (
-            <button
-              type="button"
-              onClick={() => setBlockOpen(true)}
-              disabled={saving || currentStatus === 'completed'}
-              className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <ShieldAlert size={16} />
-              Block Task
-            </button>
-          )}
-          {isCurrentlyBlocked && (
-            <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800/50 rounded-lg">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">Task is currently blocked</p>
-              <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">Resolve active block items to unblock this task.</p>
-            </div>
-          )}
-        </div>
-      </div>
+        {renderBlockTaskSection()}
 
       {/* Next Status Dropdown */}
       <div className="space-y-2">
@@ -435,6 +683,7 @@ export function TaskStatusActions({
           </p>
         )}
       </div>
+    </div>
     </div>
   );
 }
