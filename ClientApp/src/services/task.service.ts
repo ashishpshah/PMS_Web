@@ -693,13 +693,6 @@ export const taskService = {
     return mapApiTask(dto);
   },
 
-  async resolveBlockItem(taskId: number, itemId: number, comment?: string): Promise<BlockChecklistItem> {
-    return apiRequest<BlockChecklistItem>(`/tasks/${taskId}/block-checklist/${itemId}/resolve`, {
-      method: 'PUT',
-      body: JSON.stringify({ resolvedComment: comment }),
-    });
-  },
-
   async removeBlockItem(taskId: number, itemId: number): Promise<void> {
     return apiRequest<void>(`/tasks/${taskId}/block-checklist/${itemId}`, { method: 'DELETE' });
   },

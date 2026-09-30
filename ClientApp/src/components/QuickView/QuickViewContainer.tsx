@@ -850,6 +850,10 @@ export function QuickViewContainer() {
                     onRemoveItem={async (itemId) => {
                       await taskService.removeBlockItem(task.id, itemId);
                     }}
+                    onItemUpdated={() => {
+                      // Trigger a refresh of the task data
+                      refreshTasks();
+                    }}
                   />
                 </div>
               )}

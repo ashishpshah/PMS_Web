@@ -63,7 +63,6 @@ namespace TaskManagement.Services
 
         // ── Block Checklist (Phase 3) ───────────────────────────────────────────────
         Task<ApiResponse<List<BlockChecklistItemDto>>> GetBlockChecklistItemsAsync(int taskId, CancellationToken ct = default);
-        Task<ApiResponse<BlockChecklistItemDto>> ResolveBlockChecklistItemAsync(int taskId, int itemId, ResolveBlockChecklistItemDto dto, int userId);
         Task<ApiResponse<bool>> RemoveBlockChecklistItemAsync(int taskId, int itemId, int userId);
 
         // ── Attachments ──────────────────────────────────────────────────────────────
@@ -183,7 +182,6 @@ namespace TaskManagement.Services
                 // appeared, even though the backend correctly still enforced (and rejected
                 // unblocking against) the real, unseen active item.
                 .Include(t => t.BlockChecklistItems).ThenInclude(b => b.CreatedBy)
-                .Include(t => t.BlockChecklistItems).ThenInclude(b => b.ResolvedBy)
                 .AsSplitQuery()
                 .OrderByDescending(t => t.CreatedAt)
                 .Skip((page - 1) * pageSize)
@@ -259,7 +257,6 @@ namespace TaskManagement.Services
                 .Include(t => t.ReviewChecklistItems).ThenInclude(r => r.CreatedBy)
                 .Include(t => t.ReviewChecklistItems).ThenInclude(r => r.ReviewedBy)
                 .Include(t => t.BlockChecklistItems).ThenInclude(b => b.CreatedBy)
-                .Include(t => t.BlockChecklistItems).ThenInclude(b => b.ResolvedBy)
                 .Include(t => t.Attachments).ThenInclude(a => a.UploadedBy)
                 .AsSplitQuery()
                 .FirstOrDefaultAsync(t => t.Id == id, ct);
@@ -765,8 +762,12 @@ namespace TaskManagement.Services
             // Review checklist
             var rcStatuses = await _context.ReviewChecklistItems.Where(r => scopedTaskIds.Contains(r.TaskId)).Select(r => r.Status).ToListAsync(ct);
 
-            // Block checklist items
-            var bcStatuses = await _context.BlockChecklistItems.Where(b => scopedTaskIds.Contains(b.TaskId)).Select(b => b.Status).ToListAsync(ct);
+            // Block checklist items - count total items per task
+            var bcCounts = await _context.BlockChecklistItems
+                .Where(b => scopedTaskIds.Contains(b.TaskId))
+                .GroupBy(b => b.TaskId)
+                .Select(g => new { TaskId = g.Key, Count = g.Count() })
+                .ToListAsync(ct);
 
             // Issues
             var ieResolved = await _context.TaskIssueEntries.Where(e => scopedTaskIds.Contains(e.TaskId)).Select(e => e.IsResolved).ToListAsync(ct);
@@ -799,8 +800,8 @@ namespace TaskManagement.Services
                     },
                     Blockers = new BlockerStatsDto
                     {
-                        Active   = bcStatuses.Count(s => s == "active"),
-                        Resolved = bcStatuses.Count(s => s == "resolved")
+                        Active   = bcCounts.Sum(c => c.Count),
+                        Resolved = 0
                     },
                     Issues = new IssueStatsDto
                     {
@@ -1299,23 +1300,22 @@ namespace TaskManagement.Services
             if (from.Equals("blocked", StringComparison.OrdinalIgnoreCase))
             {
                 var activeItems = await _context.BlockChecklistItems
-                    .Where(i => i.TaskId == taskId && i.Status == "active")
+                    .Where(i => i.TaskId == taskId)
                     .ToListAsync();
                 if (activeItems.Count > 0)
-                    return new ApiResponse<TaskDto> { Success = false, Message = $"{activeItems.Count} block item(s) must be resolved before unblocking." };
+                    return new ApiResponse<TaskDto> { Success = false, Message = $"{activeItems.Count} block item(s) must be removed before unblocking." };
             }
 
             // Block reason lifecycle reuses TaskBlockEntry + block checklist items
             if (to.Equals("blocked", StringComparison.OrdinalIgnoreCase) && task.AssignedToId.HasValue)
             {
-                // Mark any previously active block items as removed (fresh block session).
-                var previousActive = await _context.BlockChecklistItems
-                    .Where(i => i.TaskId == taskId && i.Status == "active")
+                // Remove any previously existing block items (fresh block session).
+                var previousItems = await _context.BlockChecklistItems
+                    .Where(i => i.TaskId == taskId)
                     .ToListAsync();
-                foreach (var old in previousActive)
+                foreach (var old in previousItems)
                 {
-                    old.Status = "removed";
-                    old.UpdatedAt = AppClock.Now;
+                    _context.BlockChecklistItems.Remove(old);
                 }
 
                 // Create new block checklist items.
@@ -1328,7 +1328,6 @@ namespace TaskManagement.Services
                         Description = item.Description.Trim(),
                         Comment = item.Comment?.Trim(),
                         ExpectedResolution = item.ExpectedResolution?.Trim(),
-                        Status = "active",
                         CreatedById = userId,
                         CreatedAt = AppClock.Now
                     });
@@ -2294,44 +2293,30 @@ namespace TaskManagement.Services
                             return new ApiResponse<TaskDto> { Success = false, Message = "Each block checklist item must have a description." };
                     }
 
-                    // Mark any previous active block items as removed (fresh block session).
-                    var previousActive = await _context.BlockChecklistItems
-                        .Where(i => i.TaskId == taskId && i.Status == "active")
+                    // Remove any previous block items (fresh block session).
+                    var previousItems = await _context.BlockChecklistItems
+                        .Where(i => i.TaskId == taskId)
                         .ToListAsync();
-                    foreach (var old in previousActive)
+                    foreach (var old in previousItems)
                     {
-                        old.Status = "removed";
-                        old.UpdatedAt = AppClock.Now;
+                        _context.BlockChecklistItems.Remove(old);
                     }
 
-                    foreach (var item in dto.BlockItems)
-                    {
-                        _context.BlockChecklistItems.Add(new BlockChecklistItem
-                        {
-                            TaskId = taskId,
-                            Category = item.Category,
-                            Description = item.Description.Trim(),
-                            Comment = item.Comment?.Trim(),
-                            ExpectedResolution = item.ExpectedResolution?.Trim(),
-                            Status = "active",
-                            CreatedById = requesterId,
-                            CreatedAt = AppClock.Now
-                        });
-                    }
-
-                    // Upsert block entry
+                    // Upsert block entry first so we have its ID for the checklist items
                     var existing = task.BlockEntries.FirstOrDefault(b => b.BlockedById == requesterId);
                     var blockReason = dto.Reason ?? string.Empty;
+                    TaskBlockEntry blockEntry;
                     if (existing != null)
                     {
                         existing.Reason = blockReason;
                         existing.IsActive = true;
                         existing.BlockedAt = AppClock.Now;
                         existing.ResolvedAt = null;
+                        blockEntry = existing;
                     }
                     else
                     {
-                        _context.TaskBlockEntries.Add(new TaskBlockEntry
+                        blockEntry = new TaskBlockEntry
                         {
                             TaskId = taskId,
                             BlockedById = requesterId,
@@ -2339,6 +2324,25 @@ namespace TaskManagement.Services
                             Reason = blockReason,
                             IsActive = true,
                             BlockedAt = AppClock.Now
+                        };
+                        _context.TaskBlockEntries.Add(blockEntry);
+                    }
+
+                    // Flush to get the blockEntry ID for new items
+                    await _context.SaveChangesAsync();
+
+                    foreach (var item in dto.BlockItems)
+                    {
+                        _context.BlockChecklistItems.Add(new BlockChecklistItem
+                        {
+                            TaskId = taskId,
+                            BlockEntryId = blockEntry.Id,
+                            Category = item.Category,
+                            Description = item.Description.Trim(),
+                            Comment = item.Comment?.Trim(),
+                            ExpectedResolution = item.ExpectedResolution?.Trim(),
+                            CreatedById = requesterId,
+                            CreatedAt = AppClock.Now
                         });
                     }
 
@@ -2387,12 +2391,12 @@ namespace TaskManagement.Services
                 }
                 else
                 {
-                    // Unblock gate: all active block checklist items must be resolved.
-                    var activeItems = await _context.BlockChecklistItems
-                        .Where(i => i.TaskId == taskId && i.Status == "active")
+                    // Unblock gate: all block checklist items must be removed.
+                    var items = await _context.BlockChecklistItems
+                        .Where(i => i.TaskId == taskId)
                         .ToListAsync();
-                    if (activeItems.Count > 0)
-                        return new ApiResponse<TaskDto> { Success = false, Message = $"{activeItems.Count} block item(s) must be resolved before unblocking." };
+                    if (items.Count > 0)
+                        return new ApiResponse<TaskDto> { Success = false, Message = $"{items.Count} block item(s) must be removed before unblocking." };
 
                     // Deactivate ALL active block entries on the task.
                     var actives = task.BlockEntries.Where(b => b.IsActive).ToList();
@@ -3285,10 +3289,8 @@ namespace TaskManagement.Services
 
         private static BlockChecklistItemDto MapBlockChecklistItem(BlockChecklistItem b) => new()
         {
-            Id = b.Id, TaskId = b.TaskId, Category = b.Category, Description = b.Description,
+            Id = b.Id, TaskId = b.TaskId, BlockEntryId = b.BlockEntryId, Category = b.Category, Description = b.Description,
             Comment = b.Comment, ExpectedResolution = b.ExpectedResolution,
-            Status = b.Status, ResolvedAt = b.ResolvedAt,
-            ResolvedById = b.ResolvedById, ResolvedByName = b.ResolvedBy?.FullName,
             CreatedById = b.CreatedById, CreatedByName = b.CreatedBy?.FullName,
             CreatedAt = b.CreatedAt, UpdatedAt = b.UpdatedAt
         };
@@ -3298,7 +3300,6 @@ namespace TaskManagement.Services
             var items = await _context.BlockChecklistItems
                 .Where(i => i.TaskId == taskId)
                 .Include(i => i.CreatedBy)
-                .Include(i => i.ResolvedBy)
                 .OrderBy(i => i.CreatedAt)
                 .ToListAsync(ct);
 
@@ -3307,41 +3308,6 @@ namespace TaskManagement.Services
                 Success = true,
                 Data = items.Select(MapBlockChecklistItem).ToList()
             };
-        }
-
-        public async Task<ApiResponse<BlockChecklistItemDto>> ResolveBlockChecklistItemAsync(int taskId, int itemId, ResolveBlockChecklistItemDto dto, int userId)
-        {
-            var task = await _context.Tasks.Include(t => t.Project).FirstOrDefaultAsync(t => t.Id == taskId);
-            if (task == null)
-                return new ApiResponse<BlockChecklistItemDto> { Success = false, Message = "Task not found" };
-
-            var isAssignee = task.AssignedToId == userId;
-            var isManager = task.CreatedById == userId
-                || (task.Project != null && (task.Project.OwnerId == userId || task.Project.CreatedById == userId))
-                || await IsUserAdminAsync(userId);
-
-            if (!isAssignee && !isManager)
-                return new ApiResponse<BlockChecklistItemDto> { Success = false, Message = "Only the assignee or manager can resolve block items.", ErrorCode = "FORBIDDEN" };
-
-            var item = await _context.BlockChecklistItems
-                .Include(i => i.CreatedBy)
-                .Include(i => i.ResolvedBy)
-                .FirstOrDefaultAsync(i => i.Id == itemId && i.TaskId == taskId);
-            if (item == null)
-                return new ApiResponse<BlockChecklistItemDto> { Success = false, Message = "Block checklist item not found" };
-
-            if (item.Status != "active")
-                return new ApiResponse<BlockChecklistItemDto> { Success = false, Message = "Only active block items can be resolved." };
-
-            item.Status = "resolved";
-            item.Comment = dto.ResolvedComment?.Trim() ?? item.Comment;
-            item.ResolvedAt = AppClock.Now;
-            item.ResolvedById = userId;
-            item.UpdatedAt = AppClock.Now;
-
-            await _context.SaveChangesAsync();
-            await _context.Entry(item).Reference(i => i.ResolvedBy).LoadAsync();
-            return new ApiResponse<BlockChecklistItemDto> { Success = true, Data = MapBlockChecklistItem(item) };
         }
 
         public async Task<ApiResponse<bool>> RemoveBlockChecklistItemAsync(int taskId, int itemId, int userId)
@@ -3363,11 +3329,7 @@ namespace TaskManagement.Services
             if (item == null)
                 return new ApiResponse<bool> { Success = false, Message = "Block checklist item not found" };
 
-            if (item.Status != "active")
-                return new ApiResponse<bool> { Success = false, Message = "Only active block items can be removed." };
-
-            item.Status = "removed";
-            item.UpdatedAt = AppClock.Now;
+            _context.BlockChecklistItems.Remove(item);
 
             await _context.SaveChangesAsync();
             return new ApiResponse<bool> { Success = true, Data = true };

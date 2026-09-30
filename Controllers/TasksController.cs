@@ -611,16 +611,6 @@ namespace TaskManagement.Controllers
             return Ok(result);
         }
 
-        [HttpPut("{id}/block-checklist/{itemId}/resolve")]
-        public async Task<ActionResult<ApiResponse<BlockChecklistItemDto>>> ResolveBlockChecklistItem(int id, int itemId, [FromBody] ResolveBlockChecklistItemDto dto)
-        {
-            var userId = _authService.GetCurrentUserId();
-            if (userId <= 0) return Unauthorized(new ApiResponse<BlockChecklistItemDto> { Success = false, Message = "Unable to determine current user" });
-            var result = await _taskService.ResolveBlockChecklistItemAsync(id, itemId, dto, userId);
-            if (!result.Success) return result.ErrorCode == "FORBIDDEN" ? StatusCode(403, result) : BadRequest(result);
-            return Ok(result);
-        }
-
         [HttpDelete("{id}/block-checklist/{itemId}")]
         public async Task<ActionResult<ApiResponse<bool>>> RemoveBlockChecklistItem(int id, int itemId)
         {

@@ -610,10 +610,9 @@ namespace TaskManagement.Data
                 b.Property(i => i.Description).HasMaxLength(500).IsRequired();
                 b.Property(i => i.Comment).HasMaxLength(1000);
                 b.Property(i => i.ExpectedResolution).HasMaxLength(500);
-                b.Property(i => i.Status).HasMaxLength(20).IsRequired();
                 b.HasOne(i => i.Task).WithMany(t => t.BlockChecklistItems).HasForeignKey(i => i.TaskId).OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(i => i.BlockEntry).WithMany().HasForeignKey(i => i.BlockEntryId).OnDelete(DeleteBehavior.ClientSetNull);
                 b.HasOne(i => i.CreatedBy).WithMany().HasForeignKey(i => i.CreatedById).OnDelete(DeleteBehavior.Restrict);
-                b.HasOne(i => i.ResolvedBy).WithMany().HasForeignKey(i => i.ResolvedById).OnDelete(DeleteBehavior.Restrict);
             });
 
             // ReviewChecklistItem (Phase 2: per-task QA review checklist)
@@ -1197,15 +1196,12 @@ namespace TaskManagement.Data
         public int       Id                  { get; set; }
         public int       TaskId              { get; set; }
         public TaskEntity? Task              { get; set; }
+        public int?      BlockEntryId        { get; set; }
+        public TaskBlockEntry? BlockEntry    { get; set; }
         public string    Category            { get; set; } = string.Empty;
         public string    Description         { get; set; } = string.Empty;
         public string?   Comment             { get; set; }
         public string?   ExpectedResolution  { get; set; }
-        // "active" | "resolved" | "removed"
-        public string    Status              { get; set; } = "active";
-        public DateTime? ResolvedAt          { get; set; }
-        public int?      ResolvedById        { get; set; }
-        public User?     ResolvedBy          { get; set; }
         public int       CreatedById         { get; set; }
         public User?     CreatedBy           { get; set; }
         public DateTime  CreatedAt           { get; set; } = AppClock.Now;

@@ -48,86 +48,6 @@ function getDisableReason(
 
 const emptyItem = (): AddBlockItem => ({ category: '', description: '' });
 
-// Unblock Modal Component
-function UnblockModal({
-  onClose,
-  onConfirm,
-  saving,
-  activeBlockItemCount,
-  blockChecklistItems,
-}: {
-  onClose: () => void;
-  onConfirm: () => void;
-  saving: boolean;
-  activeBlockItemCount: number;
-  blockChecklistItems?: BlockChecklistItem[];
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-emerald-500" />
-          Unblock Task
-        </h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-          aria-label="Close"
-        >
-          <X size={18} />
-        </button>
-      </div>
-
-      <p className="text-sm text-gray-500 dark:text-gray-400">
-        Confirm to unblock this task. All active block items must be resolved first.
-      </p>
-
-      {(activeBlockItemCount > 0) && (
-        <div className="p-3 bg-red-50/60 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 rounded-lg space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
-            {activeBlockItemCount} Active Block Item{activeBlockItemCount !== 1 ? 's' : ''} must be resolved first
-          </p>
-          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-            {blockChecklistItems?.filter(i => i.status === 'active').map(item => (
-              <div key={item.id} className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
-                <span className="h-4 w-4 rounded-full bg-red-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-red-800 dark:text-red-200">
-                    {item.category}: {item.description}
-                  </span>
-                  {item.expectedResolution && (
-                    <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={saving || activeBlockItemCount > 0}
-          className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          <ShieldCheck size={16} />
-          {saving ? 'Unblocking...' : activeBlockItemCount > 0 ? 'Resolve items first' : 'Unblock Task'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 interface TaskStatusActionsProps {
   currentStatus: Status;
   isManager: boolean;
@@ -138,6 +58,7 @@ interface TaskStatusActionsProps {
   blockChecklistItems?: BlockChecklistItem[];
   onChange: (to: Status, reason?: string, actualHours?: number, blockItems?: AddBlockItem[]) => Promise<void> | void;
   onResolveItem?: (itemId: number, comment?: string) => Promise<void> | void;
+  onRemoveItem?: (itemId: number) => Promise<void> | void;
   onUnblock?: (hours?: number) => Promise<void> | void;
 }
 
@@ -151,10 +72,10 @@ export function TaskStatusActions({
   blockChecklistItems = [],
   onChange,
   onResolveItem,
+  onRemoveItem,
   onUnblock,
 }: TaskStatusActionsProps) {
   const [blockOpen, setBlockOpen] = useState(false);
-  const [unblockOpen, setUnblockOpen] = useState(false);
   const [blockItems, setBlockItems] = useState<AddBlockItem[]>([emptyItem()]);
   const [blockHoursInput, setBlockHoursInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -390,27 +311,19 @@ export function TaskStatusActions({
     );
   }
 
-  // Confirm unblock handler
-  const confirmUnblock = async () => {
+  // Inline unblock handler (replaces modal-based confirmUnblock)
+  const handleUnblock = async () => {
+    if (activeBlockItemCount > 0) return;
     setSaving(true);
     try {
-      // Pass undefined since blocked->in-progress doesn't require hours per config
       await onUnblock?.(undefined);
       showSuccess('Task unblocked successfully');
-      // Wait a bit to allow parent to refresh task data before closing modal
-      await new Promise(resolve => setTimeout(resolve, 800));
-      setUnblockOpen(false);
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to unblock task');
     } finally {
       setSaving(false);
     }
   };
-
-  // Unblock Modal
-  if (unblockOpen) {
-    return <UnblockModal onClose={() => setUnblockOpen(false)} onConfirm={confirmUnblock} saving={saving} activeBlockItemCount={activeBlockItemCount} blockChecklistItems={blockChecklistItems} />;
-  }
 
   // Helper: Render block items list
   const renderBlockItemsList = () => (
@@ -470,7 +383,7 @@ export function TaskStatusActions({
     (isAdmin || isManager) && (
       <button
         type="button"
-        onClick={() => setUnblockOpen(true)}
+        onClick={handleUnblock}
         disabled={saving || activeBlockItemCount > 0}
         className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
@@ -486,60 +399,91 @@ export function TaskStatusActions({
       <p className="text-sm font-medium text-red-800 dark:text-red-200">Task is currently blocked</p>
       <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">Resolve active block items to unblock this task.</p>
 
-      {activeBlockItemCount > 0 && (
-        <div className="mt-3 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
-            {activeBlockItemCount} Active Block Item{activeBlockItemCount !== 1 ? 's' : ''}
-          </p>
-          <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-            {localBlockItems?.filter(i => i.status === 'active').map(item => (
-              <div key={item.id} className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
-                <input
-                  type="checkbox"
-                  checked={item.status === 'resolved'}
-                  onChange={async (e) => {
-                    const checked = e.target.checked;
+      {localBlockItems && localBlockItems.length > 0 ? (
+        <div className="mt-3 space-y-2 max-h-60 overflow-y-auto pr-1">
+          {localBlockItems.map(item => (
+            <div key={item.id} className="flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-900/30">
+              <input
+                type="checkbox"
+                checked={item.status === 'resolved'}
+                onChange={async (e) => {
+                  const checked = e.target.checked;
+                  setLocalBlockItems(prev => prev.map(i =>
+                    i.id === item.id ? { ...i, status: checked ? 'resolved' : 'active' } : i
+                  ));
+                  setResolvingItemId(item.id);
+                  try {
+                    await onResolveItem?.(item.id, checked ? 'Resolved via Status & Block tab' : undefined);
+                  } catch (err) {
                     setLocalBlockItems(prev => prev.map(i =>
-                      i.id === item.id ? { ...i, status: checked ? 'resolved' : 'active' } : i
+                      i.id === item.id ? { ...i, status: checked ? 'active' : 'resolved' } : i
                     ));
-                    setResolvingItemId(item.id);
+                    throw err;
+                  } finally {
+                    setResolvingItemId(null);
+                  }
+                }}
+                disabled={saving || resolvingItemId !== null || !(isAdmin || isManager)}
+                className="h-4 w-4 text-red-600 border-red-300 rounded focus:ring-red-500 focus:ring-2"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">
+                    {item.category}
+                  </span>
+                  <span className={`ml-2 ${item.status === 'resolved' ? 'line-through text-gray-400' : ''}`}>
+                    {item.description}
+                  </span>
+                </div>
+                {item.expectedResolution && (
+                  <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
+                )}
+              </div>
+              {(isAdmin || isManager) && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!onRemoveItem) return;
+                    setSaving(true);
                     try {
-                      await onResolveItem?.(item.id, checked ? 'Resolved via Status & Block tab' : undefined);
+                      await onRemoveItem(item.id);
+                      setLocalBlockItems(prev => prev.filter(i => i.id !== item.id));
+                      showSuccess('Block item removed');
                     } catch (err) {
-                      setLocalBlockItems(prev => prev.map(i =>
-                        i.id === item.id ? { ...i, status: checked ? 'active' : 'resolved' } : i
-                      ));
-                      throw err;
+                      showError(err instanceof Error ? err.message : 'Failed to remove block item');
                     } finally {
-                      setResolvingItemId(null);
+                      setSaving(false);
                     }
                   }}
-                  disabled={saving || resolvingItemId !== null || !(isAdmin || isManager)}
-                  className="h-4 w-4 text-red-600 border-red-300 rounded focus:ring-red-500 focus:ring-2"
-                />
-                <div className="flex-1 min-w-0">
-                  <span className={`text-sm font-medium ${isAdmin || isManager ? 'text-red-800 dark:text-red-200' : 'text-red-600 dark:text-red-400 line-through'}`}>
-                    {item.category}: {item.description}
-                  </span>
-                  {item.expectedResolution && (
-                    <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+                  disabled={saving}
+                  className="p-2 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+                  aria-label="Remove block item"
+                >
+                  <Trash2 size={18} />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
+      ) : (
+        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">No block items added yet.</p>
       )}
-
-      {renderUnblockButton()}
     </div>
   );
 
   // Helper: Render non-blocked state content
   const renderNonBlockedState = () => (
     <>
-      {renderBlockItemsList()}
-      {renderUnblockButton()}
+      <button
+        type="button"
+        onClick={() => setBlockOpen(true)}
+        disabled={saving || currentStatus === 'completed'}
+        className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+      >
+        <ShieldAlert size={16} />
+        Block Task
+      </button>
     </>
   );
 
@@ -557,23 +501,12 @@ export function TaskStatusActions({
           </p>
         </div>
       </div>
-      {!isCurrentlyBlocked && (
-        <button
-          type="button"
-          onClick={() => setBlockOpen(true)}
-          disabled={saving || currentStatus === 'completed'}
-          className="mt-3 w-full px-4 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          <ShieldAlert size={16} />
-          Block Task
-        </button>
-      )}
-      {isCurrentlyBlocked ? renderBlockedState() : renderNonBlockedState()}
+      {!isCurrentlyBlocked ? renderNonBlockedState() : null}
     </div>
   );
   return (
     <div className="space-y-4">
-      {/* Current Status (1/2) | Block Task (1/2) */}
+      {/* Row 1: Current Status (1/2) | Block Task (1/2) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Current Status Card */}
         <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4 h-full">
@@ -597,93 +530,128 @@ export function TaskStatusActions({
 
         {/* Block Task Section */}
         {renderBlockTaskSection()}
-
-      {/* Next Status Dropdown */}
-      <div className="space-y-2">
-        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-          Next Status <span className="text-red-500">*</span>
-        </label>
-        <VSelect
-          options={nextStatusOptions}
-          value={selectedNextStatus ? nextStatusOptions.find(o => o.value === selectedNextStatus) ?? null : null}
-          onChange={opt => handleStatusSelect(opt ? opt.value as Status : null)}
-          placeholder="Select next status"
-          isSearchable={false}
-          disabled={saving}
-          className="w-full"
-        />
-        {selectedNextStatus && (
-          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <Info className="h-3.5 w-3.5 flex-shrink-0" />
-            <span>Selected: <strong className="text-gray-700 dark:text-gray-300 capitalize">{STATUS_LABELS[selectedNextStatus] ?? selectedNextStatus}</strong></span>
-          </div>
-        )}
       </div>
 
-      {/* Spent Hours (conditional) */}
-      {selectedNextStatus && requiresHours && (
-        <div className="space-y-2">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Spent Hours <span className="text-red-500">*</span>
-          </label>
-          <TimeInput
-            value={hoursInput}
-            onChange={setHoursInput}
-            maxHours={MAX_HOURS_PER_ENTRY}
-            disabled={saving}
-            className={`w-full px-3 py-2 text-sm font-mono bg-white dark:bg-gray-700 rounded-lg outline-none focus:ring-2 transition-colors ${
-              hoursError
-                ? 'border-red-300 dark:border-red-700 focus:ring-red-500/20 focus:border-red-500'
-                : 'border-gray-300 dark:border-gray-600 focus:ring-indigo-500/20 focus:border-indigo-500'
-            }`}
-          />
-          {hoursError && (
-            <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
-              {hoursError}
-            </p>
-          )}
+      {/* Row 2: Full-width Checklist (only when blocked) */}
+      {isCurrentlyBlocked && (
+        <div className="mt-2">
+          {renderBlockedState()}
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-3 pt-2">
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={saving || !selectedNextStatus || !!disableReason}
-          className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {saving ? (
-            <>
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
-              Saving...
-            </>
-          ) : selectedNextStatus ? (
-            requiresHours ? 'Confirm' : 'Move'
-          ) : (
-            'Select status first'
-          )}
-        </button>
-        {selectedNextStatus && (
+      {/* Row 3 & 4: Normal flow (only when NOT blocked) */}
+      {!isCurrentlyBlocked && (
+        <>
+          {/* Row 3: Next Status (1/2) | Spent Hours (1/2) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Next Status Dropdown */}
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Next Status <span className="text-red-500">*</span>
+              </label>
+              <VSelect
+                options={nextStatusOptions}
+                value={selectedNextStatus ? nextStatusOptions.find(o => o.value === selectedNextStatus) ?? null : null}
+                onChange={opt => handleStatusSelect(opt ? opt.value as Status : null)}
+                placeholder="Select next status"
+                isSearchable={false}
+                disabled={saving}
+                className="w-full"
+              />
+              {selectedNextStatus && (
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <Info className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>Selected: <strong className="text-gray-700 dark:text-gray-300 capitalize">{STATUS_LABELS[selectedNextStatus] ?? selectedNextStatus}</strong></span>
+                </div>
+              )}
+            </div>
+
+            {/* Spent Hours (conditional) */}
+            {selectedNextStatus && requiresHours && (
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Spent Hours <span className="text-red-500">*</span>
+                </label>
+                <TimeInput
+                  value={hoursInput}
+                  onChange={setHoursInput}
+                  maxHours={MAX_HOURS_PER_ENTRY}
+                  disabled={saving}
+                  className={`w-full px-3 py-2 text-sm font-mono bg-white dark:bg-gray-700 rounded-lg outline-none focus:ring-2 transition-colors ${
+                    hoursError
+                      ? 'border-red-300 dark:border-red-700 focus:ring-red-500/20 focus:border-red-500'
+                      : 'border-gray-300 dark:border-gray-600 focus:ring-indigo-500/20 focus:border-indigo-500'
+                  }`}
+                />
+                {hoursError && (
+                  <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {hoursError}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Row 4: Cancel | Confirm */}
+          <div className="flex items-center gap-3 pt-2 justify-end">
+            <button
+              type="button"
+              onClick={() => handleStatusSelect(null)}
+              disabled={saving}
+              className="px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={saving || !selectedNextStatus || !!disableReason}
+              className="px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {saving ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+                  Saving...
+                </>
+              ) : selectedNextStatus ? (
+                requiresHours ? 'Confirm' : 'Move'
+              ) : (
+                'Select status first'
+              )}
+            </button>
+            {disableReason && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                {disableReason}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Row 3 (blocked): Cancel | Unblock Task */}
+      {isCurrentlyBlocked && (
+        <div className="flex items-center gap-3 pt-2 justify-end">
           <button
             type="button"
             onClick={() => handleStatusSelect(null)}
             disabled={saving}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-40"
-            aria-label="Clear selection"
+            className="px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <X size={18} />
+            Cancel
           </button>
-        )}
-        {disableReason && (
-          <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 flex-1">
-            <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-            {disableReason}
-          </p>
-        )}
-      </div>
-    </div>
+          <button
+            type="button"
+            onClick={handleUnblock}
+            disabled={saving || activeBlockItemCount > 0}
+            className="px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <ShieldCheck size={16} />
+            {activeBlockItemCount > 0 ? `Resolve ${activeBlockItemCount} item(s) first` : 'Unblock Task'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

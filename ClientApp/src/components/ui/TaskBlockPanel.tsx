@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ShieldAlert, ShieldCheck, AlertTriangle, Plus, Trash2, CheckCircle2, X } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ShieldAlert, ShieldCheck, AlertTriangle, Plus, Trash2, X } from 'lucide-react';
 import { TaskBlockEntry, BlockChecklistItem, AddBlockItem, BLOCK_CATEGORIES } from '../../types';
 import { formatDateTime, fromHHMM, MAX_HOURS_PER_ENTRY, isValidHoursEntry } from '../../lib/utils';
 import { TimeInput } from './TimeInput';
@@ -18,13 +18,41 @@ interface TaskBlockPanelProps {
   canUnblock: boolean;
   onBlock: (items: AddBlockItem[], hours: number, reason?: string) => Promise<void>;
   onUnblock: (hours: number) => Promise<void>;
-  onResolveItem?: (itemId: number, comment?: string) => Promise<void>;
   onRemoveItem?: (itemId: number) => Promise<void>;
   onItemUpdated?: () => void;
   showBlockControls?: boolean;
 }
 
 const emptyItem = (): AddBlockItem => ({ category: '', description: '' });
+
+// Helper to group items by blockEntryId
+const groupItemsByBlockEntry = (items: BlockChecklistItem[], blockEntries: TaskBlockEntry[]) => {
+  const groups: Map<number | 'no-entry', { blockEntry: TaskBlockEntry | null; items: BlockChecklistItem[] }> = new Map();
+  
+  // First, create entries for each block entry
+  blockEntries.forEach(entry => {
+    groups.set(entry.id, { blockEntry: entry, items: [] });
+  });
+  
+  // Group items by blockEntryId
+  items.forEach(item => {
+    const key = item.blockEntryId ?? 'no-entry';
+    if (!groups.has(key)) {
+      groups.set(key, { blockEntry: blockEntries.find(e => e.id === item.blockEntryId) || null, items: [] });
+    }
+    groups.get(key)!.items.push(item);
+  });
+  
+  // Convert to array and sort by blockEntry blockedAt (newest first for active blocks)
+  return Array.from(groups.entries())
+    .filter(([, group]) => group.items.length > 0)
+    .sort((a, b) => {
+      // Sort by blockEntry blockedAt descending (newest first)
+      const dateA = a[1].blockEntry?.blockedAt ? new Date(a[1].blockEntry.blockedAt).getTime() : 0;
+      const dateB = b[1].blockEntry?.blockedAt ? new Date(b[1].blockEntry.blockedAt).getTime() : 0;
+      return dateB - dateA;
+    });
+};
 
 export function TaskBlockPanel({
   isBlocked = false,
@@ -35,7 +63,6 @@ export function TaskBlockPanel({
   canUnblock,
   onBlock,
   onUnblock,
-  onResolveItem,
   onRemoveItem,
   onItemUpdated,
   showBlockControls = true,
@@ -46,16 +73,17 @@ export function TaskBlockPanel({
   const [showUnblockForm, setShowUnblockForm] = useState(false);
   const [unblockHoursInput, setUnblockHoursInput] = useState('');
   const [saving, setSaving]       = useState(false);
-  const [resolvingId, setResolvingId] = useState<number | null>(null);
-  const [resolveComment, setResolveComment] = useState('');
 
   const canBlock = isAssignee || isAdmin;
   const canAct   = canBlock || canUnblock;
   if (!canAct) return null;
 
-  const activeItems   = blockChecklistItems.filter(i => i.status === 'active');
-  const resolvedItems = blockChecklistItems.filter(i => i.status === 'resolved');
+  // All items are now just "active" (no status field)
+  const allItems = blockChecklistItems;
   const activeBlocks  = blockEntries.filter(b => b.isActive);
+
+  // Group items by block entry for display
+  const groupedItems = useMemo(() => groupItemsByBlockEntry(blockChecklistItems, blockEntries), [blockChecklistItems, blockEntries]);
 
   const hours = fromHHMM(hoursInput);
   const hoursValid = isValidHoursEntry(hours);
@@ -89,16 +117,6 @@ export function TaskBlockPanel({
     } finally { setSaving(false); }
   };
 
-  const handleResolve = async (itemId: number) => {
-    setSaving(true);
-    try {
-      await onResolveItem?.(itemId, resolveComment.trim() || undefined);
-      setResolvingId(null);
-      setResolveComment('');
-      onItemUpdated?.();
-    } finally { setSaving(false); }
-  };
-
   const handleRemove = async (itemId: number) => {
     setSaving(true);
     try {
@@ -126,89 +144,82 @@ export function TaskBlockPanel({
         </div>
       )}
 
-      {/* Active block checklist items */}
-      {activeItems.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1.5">
-            <ShieldAlert size={12} /> {activeItems.length} Active Block Item{activeItems.length !== 1 ? 's' : ''}
-          </p>
-          {activeItems.map(item => (
-            <div key={item.id} className="p-3 bg-red-50/60 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-lg space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded">
-                    {item.category}
+      {/* Block checklist items grouped by block entry */}
+      {groupedItems.length > 0 && (
+        <div className="space-y-3">
+          {groupedItems.map((group, groupIndex) => {
+            const { blockEntry, items } = group;
+            
+            // Only show groups that have items
+            if (items.length === 0) return null;
+            
+            const isActiveBlock = blockEntry?.isActive === true;
+            const blockNumber = groupIndex + 1;
+            const blockLabel = blockEntry 
+              ? `${blockEntry.blockedByName} — ${formatDateTime(blockEntry.blockedAt)}`
+              : 'Previous blocks';
+            
+            return (
+              <div key={blockEntry?.id || `no-entry-${groupIndex}`} className="space-y-2">
+                {/* Block entry header */}
+                <div className="flex items-center gap-2 px-3 py-2 bg-red-50/40 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-lg">
+                  <ShieldAlert size={14} className="text-red-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-red-700 dark:text-red-300">
+                      Block #{blockNumber} {isActiveBlock ? (
+                        <span className="ml-2 text-xs px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded">Active</span>
+                      ) : (
+                        <span className="ml-2 text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded">Resolved</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-red-600 dark:text-red-400 truncate">{blockLabel}</p>
+                    {blockEntry?.reason && (
+                      <p className="text-xs text-gray-500 italic">"{blockEntry.reason}"</p>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-400 font-mono">
+                    {items.length} item{items.length !== 1 ? 's' : ''}
                   </span>
-                  <p className="text-sm font-semibold text-red-800 dark:text-red-200 mt-1">{item.description}</p>
-                  {item.expectedResolution && (
-                    <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
-                  )}
                 </div>
-                {(onResolveItem || onRemoveItem) && (
-                  <div className="flex gap-1 shrink-0">
-                    {onResolveItem && (
-                      <button type="button" onClick={() => setResolvingId(item.id)}
-                        title="Resolve" className="p-1.5 text-emerald-500 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20">
-                        <CheckCircle2 size={14} />
-                      </button>
-                    )}
-                    {onRemoveItem && (
-                      <button type="button" onClick={() => handleRemove(item.id)} disabled={saving}
-                        title="Remove" className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              {resolvingId === item.id && (
-                <div className="space-y-2 pt-2 border-t border-red-100 dark:border-red-900/30">
-                  <input
-                    type="text"
-                    value={resolveComment}
-                    onChange={e => setResolveComment(e.target.value)}
-                    placeholder="Resolution comment (optional)"
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 placeholder-gray-400"
-                  />
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => { setResolvingId(null); setResolveComment(''); }}
-                      className="flex-1 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
-                      Cancel
-                    </button>
-                    <button type="button" onClick={() => handleResolve(item.id)} disabled={saving}
-                      className="flex-1 py-2 text-sm font-medium bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50">
-                      {saving ? '…' : 'Mark Resolved'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Resolved items (collapsed) */}
-      {resolvedItems.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{resolvedItems.length} Resolved</p>
-          {resolvedItems.map(item => (
-            <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 rounded-lg opacity-70">
-              <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
-              <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">{item.category}</span>
-              <span className="text-sm text-gray-500 truncate flex-1">{item.description}</span>
-            </div>
-          ))}
+                {/* Items for this block */}
+                <div className="space-y-2 ml-6 border-l-2 border-red-200 dark:border-red-800/50 pl-3">
+                  {items.map(item => (
+                    <div key={item.id} className="p-3 bg-red-50/60 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-lg space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded">
+                            {item.category}
+                          </span>
+                          <p className="text-sm font-semibold text-red-800 dark:text-red-200 mt-1">{item.description}</p>
+                          {item.expectedResolution && (
+                            <p className="text-xs text-gray-500 mt-0.5">Expected: {item.expectedResolution}</p>
+                          )}
+                        </div>
+                        {onRemoveItem && (
+                          <button type="button" onClick={() => handleRemove(item.id)} disabled={saving}
+                            title="Remove" className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
       {/* Unblock / Block buttons */}
       <div className="flex items-center gap-2 flex-wrap">
         {canUnblock && isBlocked && !showUnblockForm && (
-          <button onClick={() => setShowUnblockForm(true)} disabled={saving || activeItems.length > 0}
-            title={activeItems.length > 0 ? `Resolve ${activeItems.length} item(s) first` : 'Unblock task'}
+          <button onClick={() => setShowUnblockForm(true)} disabled={saving || allItems.length > 0}
+            title={allItems.length > 0 ? `Remove ${allItems.length} item(s) first` : 'Unblock task'}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-emerald-200 dark:border-emerald-800 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             <ShieldCheck size={14} />
-            {activeItems.length > 0 ? `Resolve ${activeItems.length} item(s) first` : 'Unblock Task'}
+            {allItems.length > 0 ? `Remove ${allItems.length} item(s) first` : 'Unblock Task'}
           </button>
         )}
         {showBlockControls && canBlock && !isBlocked && !showForm && (
@@ -237,7 +248,7 @@ export function TaskBlockPanel({
             <p className="text-xs text-gray-500 dark:text-gray-400">No hours required to unblock.</p>
           )}
           <div className="flex gap-3">
-            <button onClick={() => { setShowUnblockForm(false); setUnblockHoursInput(''); }}
+            <button type="button" onClick={() => { setShowUnblockForm(false); setUnblockHoursInput(''); }}
               className="flex-1 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               Cancel
             </button>
@@ -257,7 +268,7 @@ export function TaskBlockPanel({
             <h3 className="text-sm font-semibold text-red-800 dark:text-red-200 flex items-center gap-2">
               <ShieldAlert size={16} /> Block Reason Items
             </h3>
-            <button onClick={() => { setShowForm(false); setBlockItems([emptyItem()]); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+            <button type="button" onClick={() => { setShowForm(false); setBlockItems([emptyItem()]); setHoursInput(''); }} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
               <X size={18} />
             </button>
           </div>
@@ -315,7 +326,7 @@ export function TaskBlockPanel({
             />
           </div>
           <div className="flex gap-3 pt-2 border-t border-red-100 dark:border-red-900/30">
-            <button onClick={() => { setShowForm(false); setBlockItems([emptyItem()]); setHoursInput(''); }}
+            <button type="button" onClick={() => { setShowForm(false); setBlockItems([emptyItem()]); setHoursInput(''); }}
               className="flex-1 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               Cancel
             </button>

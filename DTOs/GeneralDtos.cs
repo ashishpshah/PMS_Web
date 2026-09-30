@@ -1234,15 +1234,11 @@ namespace TaskManagement.DTOs
     {
         public int Id { get; set; }
         public int TaskId { get; set; }
+        public int? BlockEntryId { get; set; }
         public string Category { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string? Comment { get; set; }
         public string? ExpectedResolution { get; set; }
-        // "active" | "resolved" | "removed"
-        public string Status { get; set; } = "active";
-        public DateTime? ResolvedAt { get; set; }
-        public int? ResolvedById { get; set; }
-        public string? ResolvedByName { get; set; }
         public int CreatedById { get; set; }
         public string? CreatedByName { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -1259,11 +1255,5 @@ namespace TaskManagement.DTOs
         public string? Comment { get; set; }
         [MaxLength(500)]
         public string? ExpectedResolution { get; set; }
-    }
-
-    public class ResolveBlockChecklistItemDto
-    {
-        [MaxLength(500)]
-        public string? ResolvedComment { get; set; }
     }
 }

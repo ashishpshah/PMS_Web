@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TaskManagement.Data;
 
@@ -11,9 +12,10 @@ using TaskManagement.Data;
 namespace TaskManagement.Migrations
 {
     [DbContext(typeof(PMSDbContext))]
-    partial class PMSDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930035025_AddBlockEntryIdToBlockChecklistItem")]
+    partial class AddBlockEntryIdToBlockChecklistItem
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -158,6 +160,17 @@ namespace TaskManagement.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ResolvedById")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<int>("TaskId")
                         .HasColumnType("int");
 
@@ -169,6 +182,8 @@ namespace TaskManagement.Migrations
                     b.HasIndex("BlockEntryId");
 
                     b.HasIndex("CreatedById");
+
+                    b.HasIndex("ResolvedById");
 
                     b.HasIndex("TaskId");
 
@@ -1880,6 +1895,11 @@ namespace TaskManagement.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("TaskManagement.Data.User", "ResolvedBy")
+                        .WithMany()
+                        .HasForeignKey("ResolvedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TaskManagement.Data.TaskEntity", "Task")
                         .WithMany("BlockChecklistItems")
                         .HasForeignKey("TaskId")
@@ -1889,6 +1909,8 @@ namespace TaskManagement.Migrations
                     b.Navigation("BlockEntry");
 
                     b.Navigation("CreatedBy");
+
+                    b.Navigation("ResolvedBy");
 
                     b.Navigation("Task");
                 });

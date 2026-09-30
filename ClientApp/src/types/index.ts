@@ -771,14 +771,11 @@ export interface AddBlockItem {
 export interface BlockChecklistItem {
   id: number;
   taskId: number;
+  blockEntryId?: number;
   category: string;
   description: string;
   comment?: string;
   expectedResolution?: string;
-  status: 'active' | 'resolved' | 'removed';
-  resolvedAt?: string;
-  resolvedById?: number;
-  resolvedByName?: string;
   createdById: number;
   createdByName?: string;
   createdAt: string;

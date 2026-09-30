@@ -2623,6 +2623,7 @@ return (
                                 }}
                                 onResolveItem={async (itemId, comment) => { await taskService.resolveBlockItem(live.id, itemId, comment); refreshTasks(); }}
                                 onRemoveItem={async (itemId) => { await taskService.removeBlockItem(live.id, itemId); refreshTasks(); }}
+                                onToggleItem={async (itemId) => { await taskService.toggleBlockItem(live.id, itemId); refreshTasks(); }}
                                 onItemUpdated={refreshTasks} />
                             </div> */}
 
